@@ -321,10 +321,6 @@ function App() {
   // Onboarding
   const [showOnboarding, setShowOnboarding] = useState(false);
 
-  // v1.0.0: Auto-update
-  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; body: string } | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const pendingUpdateRef = useRef<{ downloadAndInstall: () => Promise<void> } | null>(null);
 
   useEffect(() => {
     applyTheme(themeMode);
@@ -507,34 +503,6 @@ function App() {
     } catch { setShowOnboarding(false); }
   };
 
-  // ── Auto-update check ──
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { check } = await import("@tauri-apps/plugin-updater");
-        const update = await check();
-        if (update && !cancelled) {
-          pendingUpdateRef.current = update;
-          setUpdateAvailable({ version: update.version, body: update.body ?? "" });
-        }
-      } catch { /* updater unavailable in dev */ }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const installUpdate = async () => {
-    const update = pendingUpdateRef.current;
-    if (!update) return;
-    setIsUpdating(true);
-    try {
-      await update.downloadAndInstall();
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
-    } catch {
-      setIsUpdating(false);
-    }
-  };
 
   // ── File drag-and-drop import ──
   const importFiles = useCallback(async (paths: string[]) => {
@@ -2018,19 +1986,6 @@ function App() {
         <TourTooltip step={tour.currentStep} stepIndex={tour.stepIndex} totalSteps={tour.totalSteps} onNext={tour.next} onPrev={tour.prev} onSkip={tour.skip} />
       )}
 
-      {/* Update Toast */}
-      {updateAvailable && (
-        <div className="update-toast" role="alert">
-          <div>
-            <div className="update-toast-text">{t("update.available")}</div>
-            <div className="update-toast-version">v{updateAvailable.version}</div>
-          </div>
-          <button className="btn btn-sm btn-accent" onClick={installUpdate} disabled={isUpdating}>
-            {isUpdating ? t("update.installing") : t("update.install")}
-          </button>
-          <button className="btn btn-icon btn-ghost btn-sm" onClick={() => setUpdateAvailable(null)} aria-label={t("a11y.close")}>&times;</button>
-        </div>
-      )}
     </div>
   );
 }
