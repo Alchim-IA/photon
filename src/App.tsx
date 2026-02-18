@@ -1340,13 +1340,14 @@ function App() {
                 <div className="preview-tabs-right">
                   <button className="btn btn-icon btn-sm btn-ghost" onClick={() => setZoomLevel((z) => Math.max(25, z - 25))} aria-label={t("a11y.zoomOut")}>{Icons.zoomOut}</button>
                   <span className="zoom-label">{zoomLevel}%</span>
-                  <button className="btn btn-icon btn-sm btn-ghost" onClick={() => setZoomLevel((z) => Math.min(200, z + 25))} aria-label={t("a11y.zoomIn")}>{Icons.zoomIn}</button>
+                  <button className="btn btn-icon btn-sm btn-ghost" onClick={() => setZoomLevel((z) => Math.min(400, z + 25))} aria-label={t("a11y.zoomIn")}>{Icons.zoomIn}</button>
+                  <button className="btn btn-icon btn-sm btn-ghost" onClick={() => setZoomLevel(100)} aria-label="Reset zoom" style={{ marginLeft: 4, fontSize: '0.7rem', opacity: zoomLevel !== 100 ? 1 : 0.4 }}>1:1</button>
                 </div>
               )}
             </div>
 
             {activeView === "preview" ? (
-              <div className="preview-content" role="tabpanel">
+              <div className="preview-content" role="tabpanel" onWheel={(e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoomLevel((z) => Math.max(25, Math.min(400, z + (e.deltaY < 0 ? 25 : -25)))); } }}>
                 {isScanning ? (
                   <div className="scan-in-progress">
                     <div className="scan-animation"><div className="scan-page"><div className="scan-line-sweep" /></div></div>
@@ -1391,7 +1392,7 @@ function App() {
                     </DndContext>
                   </div>
                 ) : selectedDocument ? (
-                  <div className="preview-image-container" style={{ width: `${zoomLevel * 2.8}px` }}>
+                  <div className="preview-image-container" style={{ width: `${zoomLevel * 6}px` }}>
                     <img src={selectedDocument.dataUrl} alt={selectedDocument.name} className="preview-image" />
                   </div>
                 ) : (
