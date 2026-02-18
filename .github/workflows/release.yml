@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: ubuntu-22.04
+          - platform: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
           - platform: macos-latest
             target: aarch64-apple-darwin
@@ -56,19 +56,21 @@ jobs:
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
-        run: brew install tesseract
+        run: brew install tesseract leptonica
 
-      - name: Install Windows dependencies
+      - name: Install Windows dependencies (vcpkg)
         if: runner.os == 'Windows'
-        run: choco install tesseract
+        run: |
+          vcpkg install tesseract:x64-windows-static-md leptonica:x64-windows-static-md
+        env:
+          VCPKG_ROOT: C:\vcpkg
 
       - run: npm ci
 
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VCPKG_ROOT: C:\vcpkg
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Photon ${{ github.ref_name }}

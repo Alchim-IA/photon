@@ -36,15 +36,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "createUpdaterArtifacts": true
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "REPLACE_WITH_YOUR_UPDATER_PUBKEY",
-      "endpoints": [
-        "https://github.com/cyprienbrisset/document-scanner/releases/latest/download/latest.json"
-      ]
-    }
+    ]
   }
 }
