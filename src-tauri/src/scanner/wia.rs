@@ -6,15 +6,10 @@ use windows::{
     Win32::Devices::ImageAcquisition::*,
     Win32::System::Com::*,
     Win32::System::Com::StructuredStorage::*,
-    Win32::System::Variant::*,
     Win32::Foundation::*,
 };
 #[cfg(windows)]
 use std::ptr;
-#[cfg(windows)]
-use std::ffi::OsString;
-#[cfg(windows)]
-use std::os::windows::ffi::OsStringExt;
 
 pub struct WiaBackend {
     #[cfg(windows)]
@@ -37,33 +32,16 @@ impl WiaBackend {
 
 #[cfg(windows)]
 unsafe fn propvariant_to_string(pv: &PROPVARIANT) -> Option<String> {
-    let variant = &pv.Anonymous.Anonymous;
-    if variant.vt == VT_BSTR.0 {
-        let bstr = &variant.Anonymous.bstrVal;
-        let len = SysStringLen(&**bstr) as usize;
-        if len > 0 {
-            let slice = std::slice::from_raw_parts(bstr.as_ptr(), len);
-            return Some(OsString::from_wide(slice).to_string_lossy().into_owned());
-        }
-    } else if variant.vt == VT_LPWSTR.0 {
-        let pwsz = variant.Anonymous.pwszVal;
-        if !pwsz.is_null() {
-            let len = (0..).take_while(|&i| *pwsz.add(i) != 0).count();
-            let slice = std::slice::from_raw_parts(pwsz, len);
-            return Some(OsString::from_wide(slice).to_string_lossy().into_owned());
-        }
+    // Try BSTR extraction first
+    if let Ok(bstr) = BSTR::try_from(pv) {
+        return Some(bstr.to_string());
     }
     None
 }
 
 #[cfg(windows)]
 unsafe fn propvariant_to_i32(pv: &PROPVARIANT) -> Option<i32> {
-    let variant = &pv.Anonymous.Anonymous;
-    if variant.vt == VT_I4.0 {
-        Some(variant.Anonymous.lVal)
-    } else {
-        None
-    }
+    i32::try_from(pv).ok()
 }
 
 #[cfg(windows)]
@@ -76,7 +54,7 @@ unsafe fn read_wia_property_string(
         Anonymous: PROPSPEC_0 { propid: prop_id },
     };
     let mut propvar = PROPVARIANT::default();
-    storage.ReadMultiple(&[propspec], &mut propvar)?;
+    storage.ReadMultiple(1, &propspec, &mut propvar)?;
     propvariant_to_string(&propvar).ok_or_else(|| Error::from(E_FAIL))
 }
 
@@ -90,7 +68,7 @@ unsafe fn read_wia_property_i32(
         Anonymous: PROPSPEC_0 { propid: prop_id },
     };
     let mut propvar = PROPVARIANT::default();
-    storage.ReadMultiple(&[propspec], &mut propvar)?;
+    storage.ReadMultiple(1, &propspec, &mut propvar)?;
     propvariant_to_i32(&propvar).ok_or_else(|| Error::from(E_FAIL))
 }
 
@@ -105,13 +83,8 @@ unsafe fn write_wia_property_i32(
         ulKind: PRSPEC_PROPID,
         Anonymous: PROPSPEC_0 { propid: prop_id },
     };
-    let mut propvar = PROPVARIANT::default();
-    {
-        let variant = &mut propvar.Anonymous.Anonymous;
-        variant.vt = VT_I4.0;
-        variant.Anonymous.lVal = value;
-    }
-    storage.WriteMultiple(&[propspec], &[propvar], 2)?;
+    let propvar = PROPVARIANT::from(value);
+    storage.WriteMultiple(1, &propspec, &propvar, 2)?;
     Ok(())
 }
 
@@ -120,13 +93,13 @@ fn find_scanner_item(root: &IWiaItem2) -> Result<IWiaItem2> {
     unsafe {
         let enumerator = root.EnumChildItems(None)?;
         loop {
-            let mut items: [Option<IWiaItem2>; 1] = [None];
+            let mut item: Option<IWiaItem2> = None;
             let mut fetched: u32 = 0;
-            let hr = enumerator.Next(&mut items, &mut fetched);
+            let hr = enumerator.Next(1, &mut item, &mut fetched);
             if hr.is_err() || fetched == 0 {
                 break;
             }
-            if let Some(item) = items[0].take() {
+            if let Some(item) = item.take() {
                 let item_type = {
                     let storage: IWiaPropertyStorage = item.cast()?;
                     read_wia_property_i32(&storage, WIA_IPA_ITEM_FLAGS).unwrap_or(0)
@@ -149,20 +122,20 @@ impl ScannerBackend for WiaBackend {
                 let dev_mgr: IWiaDevMgr2 = CoCreateInstance(&WiaDevMgr2, None, CLSCTX_LOCAL_SERVER)
                     .map_err(|e| ScannerError::SystemError(format!("Impossible de créer WIA Device Manager: {}", e)))?;
 
-                let enumerator = dev_mgr.EnumDeviceInfo(WIA_DEVINFO_ENUM_LOCAL.0 as u32)
+                let enumerator = dev_mgr.EnumDeviceInfo(WIA_DEVINFO_ENUM_LOCAL.0 as i32)
                     .map_err(|e| ScannerError::SystemError(format!("Erreur énumération: {}", e)))?;
 
                 let mut devices = Vec::new();
 
                 loop {
-                    let mut props: [Option<IWiaPropertyStorage>; 1] = [None];
+                    let mut storage_opt: Option<IWiaPropertyStorage> = None;
                     let mut fetched: u32 = 0;
-                    let hr = enumerator.Next(&mut props, Some(&mut fetched));
+                    let hr = enumerator.Next(1, &mut storage_opt, &mut fetched);
                     if hr.is_err() || fetched == 0 {
                         break;
                     }
 
-                    if let Some(storage) = props[0].take() {
+                    if let Some(storage) = storage_opt.take() {
                         let name = read_wia_property_string(&storage, WIA_DIP_DEV_NAME)
                             .unwrap_or_else(|_| "Scanner inconnu".to_string());
                         let id = read_wia_property_string(&storage, WIA_DIP_DEV_ID)
@@ -177,14 +150,12 @@ impl ScannerBackend for WiaBackend {
                             continue;
                         }
 
-                        // Try to get capabilities by connecting to the device
                         let mut caps = ScannerCapabilities::default();
 
                         if let Ok(device) = dev_mgr.CreateDevice(0, &BSTR::from(&id)) {
                             if let Ok(scanner_item) = find_scanner_item(&device) {
                                 let item_storage: std::result::Result<IWiaPropertyStorage, _> = scanner_item.cast();
                                 if let Ok(item_storage) = item_storage {
-                                    // Read supported resolutions
                                     if let Ok(xres) = read_wia_property_i32(&item_storage, WIA_IPS_XRES) {
                                         caps.resolutions = vec![75, 150, 300, 600];
                                         if xres >= 1200 {
@@ -192,7 +163,6 @@ impl ScannerBackend for WiaBackend {
                                         }
                                     }
 
-                                    // Check ADF support
                                     if let Ok(doc_handling) = read_wia_property_i32(&item_storage, WIA_IPS_DOCUMENT_HANDLING_SELECT) {
                                         caps.supports_adf = (doc_handling & 0x01) != 0;
                                         caps.supports_duplex = (doc_handling & 0x04) != 0;
@@ -232,22 +202,17 @@ impl ScannerBackend for WiaBackend {
                 let scanner_item = find_scanner_item(&device)
                     .map_err(|_| ScannerError::SystemError("Aucun élément scanner trouvé".to_string()))?;
 
-                // Set scan properties
                 let (paper_w, paper_h) = paper_dimensions(&options.paper_format);
                 let width_px = mm_to_pixels(paper_w, options.dpi) as i32;
                 let height_px = mm_to_pixels(paper_h, options.dpi) as i32;
 
-                // Resolution
                 let _ = write_wia_property_i32(&scanner_item, WIA_IPS_XRES, options.dpi as i32);
                 let _ = write_wia_property_i32(&scanner_item, WIA_IPS_YRES, options.dpi as i32);
-
-                // Scan area
                 let _ = write_wia_property_i32(&scanner_item, WIA_IPS_XPOS, 0);
                 let _ = write_wia_property_i32(&scanner_item, WIA_IPS_YPOS, 0);
                 let _ = write_wia_property_i32(&scanner_item, WIA_IPS_XEXTENT, width_px);
                 let _ = write_wia_property_i32(&scanner_item, WIA_IPS_YEXTENT, height_px);
 
-                // Color mode: 0=color, 2=grayscale, 4=bw
                 let data_type = match color_mode_id(&options.color_mode) {
                     1 => 2i32,  // WIA_DATA_COLOR
                     2 => 1i32,  // WIA_DATA_GRAYSCALE
@@ -256,16 +221,10 @@ impl ScannerBackend for WiaBackend {
                 };
                 let _ = write_wia_property_i32(&scanner_item, WIA_IPA_DATATYPE, data_type);
 
-                // Duplex
                 if options.duplex {
-                    let _ = write_wia_property_i32(&scanner_item, WIA_IPS_DOCUMENT_HANDLING_SELECT, 0x05); // FEEDER | DUPLEX
+                    let _ = write_wia_property_i32(&scanner_item, WIA_IPS_DOCUMENT_HANDLING_SELECT, 0x05);
                 }
 
-                // Format: BMP for simplicity
-                // WIA_IPA_FORMAT = 4106
-                // WIA_FormatBMP GUID
-
-                // Perform the transfer using IWiaTransfer
                 let transfer: IWiaTransfer = scanner_item.cast()
                     .map_err(|e| ScannerError::SystemError(format!("Interface de transfert: {}", e)))?;
 
@@ -280,7 +239,6 @@ impl ScannerBackend for WiaBackend {
                     return Err(ScannerError::SystemError("Aucune donnée reçue du scanner".to_string()));
                 }
 
-                // Convert BMP/raw data to PNG using the image crate
                 let img = ::image::load_from_memory(&data)
                     .map_err(|e| ScannerError::SystemError(format!("Décodage image: {}", e)))?;
 
@@ -347,18 +305,7 @@ impl IWiaTransferCallback_Impl for WiaTransferCallback_Impl {
         lflags: i32,
         pwiatransferparams: *const WiaTransferParams,
     ) -> Result<()> {
-        if !pwiatransferparams.is_null() {
-            unsafe {
-                let params = &*pwiatransferparams;
-                // lMessage == WIA_TRANSFER_MSG_STATUS (1)
-                // lMessage == WIA_TRANSFER_MSG_END_OF_STREAM (2)
-                // lMessage == WIA_TRANSFER_MSG_END_OF_TRANSFER (3)
-                if params.lMessage == 2 || params.lMessage == 3 {
-                    // Transfer complete
-                }
-            }
-        }
-        let _ = lflags;
+        let _ = (lflags, pwiatransferparams);
         Ok(())
     }
 
@@ -369,17 +316,8 @@ impl IWiaTransferCallback_Impl for WiaTransferCallback_Impl {
         bstrfullitemname: &BSTR,
     ) -> Result<IStream> {
         let _ = (lflags, bstritemname, bstrfullitemname);
-        // Create an in-memory IStream to receive the data
         unsafe {
-            let stream = CreateStreamOnHGlobal(HGLOBAL::default(), true)
-                .map_err(|e| Error::from(e))?;
-
-            // Store reference to read data later
-            // We'll read from the stream after transfer completes
-            let data_ref = self.inner.data.clone();
-
-            // For now, return the stream. Data will be read after transfer.
-            // We clone the Arc so the callback can access it later.
+            let stream = CreateStreamOnHGlobal(HGLOBAL::default(), true)?;
             Ok(stream)
         }
     }
