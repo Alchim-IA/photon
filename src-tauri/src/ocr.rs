@@ -1,5 +1,35 @@
 use crate::scanner::ScannerError;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
+
+/// Detect the tessdata directory at startup.
+fn tessdata_dir() -> Option<&'static str> {
+    static DIR: OnceLock<Option<String>> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let candidates = [
+            // Explicit env override
+            std::env::var("TESSDATA_PREFIX").ok(),
+            // Homebrew Apple Silicon
+            Some("/opt/homebrew/share/tessdata".to_string()),
+            // Homebrew Intel
+            Some("/usr/local/share/tessdata".to_string()),
+            // Linux
+            Some("/usr/share/tesseract-ocr/5/tessdata".to_string()),
+            Some("/usr/share/tesseract-ocr/4.00/tessdata".to_string()),
+            Some("/usr/share/tessdata".to_string()),
+        ];
+        for candidate in candidates.into_iter().flatten() {
+            let p = std::path::Path::new(&candidate);
+            if p.is_dir() && p.join("eng.traineddata").exists() {
+                log::info!("Tessdata trouvé: {}", candidate);
+                return Some(candidate);
+            }
+        }
+        log::warn!("Aucun répertoire tessdata trouvé");
+        None
+    })
+    .as_deref()
+}
 
 /// A single word recognized by OCR, with its bounding box.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,7 +53,7 @@ pub struct OcrResult {
 
 /// Extracts plain text from a PNG image using Tesseract.
 pub fn extract_text(png_data: &[u8], lang: &str) -> Result<String, ScannerError> {
-    let mut tess = tesseract::Tesseract::new(None, Some(lang))
+    let mut tess = tesseract::Tesseract::new(tessdata_dir(), Some(lang))
         .map_err(|e| ScannerError::SystemError(format!("Initialisation Tesseract: {}", e)))?
         .set_image_from_mem(png_data)
         .map_err(|e| ScannerError::SystemError(format!("Chargement image OCR: {}", e)))?;
@@ -37,7 +67,7 @@ pub fn extract_text(png_data: &[u8], lang: &str) -> Result<String, ScannerError>
 
 /// Extracts text with per-word bounding boxes from a PNG image.
 pub fn extract_text_with_boxes(png_data: &[u8], lang: &str) -> Result<OcrResult, ScannerError> {
-    let mut tess = tesseract::Tesseract::new(None, Some(lang))
+    let mut tess = tesseract::Tesseract::new(tessdata_dir(), Some(lang))
         .map_err(|e| ScannerError::SystemError(format!("Initialisation Tesseract: {}", e)))?
         .set_image_from_mem(png_data)
         .map_err(|e| ScannerError::SystemError(format!("Chargement image OCR: {}", e)))?;

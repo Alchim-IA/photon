@@ -14,6 +14,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::sync::Mutex;
 use uuid::Uuid;
 
@@ -207,6 +208,534 @@ async fn scan_document(
     })
 }
 
+/// Import an external file (image, multi-page TIFF, or PDF) and return one ScanResultDto per page.
+#[tauri::command]
+async fn import_file(
+    file_path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<ScanResultDto>, ScannerError> {
+    let path = std::path::Path::new(&file_path);
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let file_stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Import")
+        .to_string();
+
+    let raw_pages: Vec<Vec<u8>> = match ext.as_str() {
+        "pdf" => extract_pdf_pages(&file_path)?,
+        "tif" | "tiff" => extract_tiff_pages(&file_path)?,
+        "png" | "jpg" | "jpeg" | "bmp" | "webp" => {
+            let data = std::fs::read(&file_path)
+                .map_err(|e| ScannerError::SystemError(format!("Lecture fichier: {}", e)))?;
+            // Validate and convert to PNG
+            let img = ::image::load_from_memory(&data)
+                .map_err(|e| ScannerError::SystemError(format!("Décodage image: {}", e)))?;
+            let mut png_buf = Vec::new();
+            img.write_to(&mut Cursor::new(&mut png_buf), ::image::ImageFormat::Png)
+                .map_err(|e| ScannerError::SystemError(format!("Conversion PNG: {}", e)))?;
+            vec![png_buf]
+        }
+        _ => return Err(ScannerError::UnsupportedFormat(ext)),
+    };
+
+    let now = Local::now();
+    let date = now.format("%d/%m/%Y %H:%M").to_string();
+    let total = raw_pages.len();
+    let mut results = Vec::with_capacity(total);
+
+    for (i, png_data) in raw_pages.into_iter().enumerate() {
+        let img = ::image::load_from_memory(&png_data)
+            .map_err(|e| ScannerError::SystemError(format!("Décodage page {}: {}", i + 1, e)))?;
+        let width = img.width();
+        let height = img.height();
+
+        let id = Uuid::new_v4().to_string();
+        let name = if total > 1 {
+            format!("{} - page {}.png", file_stem, i + 1)
+        } else {
+            format!("{}.png", file_stem)
+        };
+
+        let image_base64 = BASE64.encode(&png_data);
+        {
+            let mut docs = state.documents.lock().unwrap();
+            docs.insert(
+                id.clone(),
+                DocumentData {
+                    png_data: png_data.clone(),
+                    original_png_data: None,
+                    width,
+                    height,
+                    dpi: 300,
+                },
+            );
+        }
+
+        let _ = storage::add_to_history(DocumentMeta {
+            id: id.clone(),
+            name: name.clone(),
+            date: date.clone(),
+            file_path: Some(file_path.clone()),
+            format: ext.to_uppercase(),
+            size_bytes: 0,
+            width,
+            height,
+            dpi: 300,
+            ocr_text: None,
+            ocr_lang: None,
+        });
+
+        results.push(ScanResultDto {
+            id,
+            name,
+            date: date.clone(),
+            width,
+            height,
+            image_base64,
+        });
+    }
+
+    Ok(results)
+}
+
+/// Extract each page of a PDF as a PNG image.
+/// Uses pdfium for full rendering, falls back to lopdf image extraction.
+fn extract_pdf_pages(file_path: &str) -> Result<Vec<Vec<u8>>, ScannerError> {
+    // Try pdfium rendering first (handles all PDFs: text, images, mixed)
+    match extract_pdf_pages_pdfium(file_path) {
+        Ok(pages) if !pages.is_empty() => {
+            log::info!("PDF: {} pages rendues via pdfium", pages.len());
+            return Ok(pages);
+        }
+        Err(e) => log::warn!("pdfium indisponible, fallback lopdf: {}", e),
+        _ => log::warn!("pdfium: aucune page rendue, fallback lopdf"),
+    }
+
+    // Fallback: extract embedded images with lopdf
+    extract_pdf_pages_lopdf(file_path)
+}
+
+/// Render each PDF page to a PNG using pdfium (full rendering).
+fn extract_pdf_pages_pdfium(file_path: &str) -> Result<Vec<Vec<u8>>, ScannerError> {
+    use pdfium_render::prelude::*;
+
+    // Try to find libpdfium in several locations
+    let pdfium = Pdfium::new(
+        Pdfium::bind_to_library(
+            Pdfium::pdfium_platform_library_name_at_path("./")
+        )
+        .or_else(|_| Pdfium::bind_to_library(
+            Pdfium::pdfium_platform_library_name_at_path("../Frameworks/")
+        ))
+        .or_else(|_| Pdfium::bind_to_system_library())
+        .map_err(|e| ScannerError::SystemError(format!(
+            "Bibliothèque pdfium introuvable. Placez libpdfium.dylib à côté de l'exécutable. ({})", e
+        )))?
+    );
+    let document = pdfium
+        .load_pdf_from_file(file_path, None)
+        .map_err(|e| ScannerError::SystemError(format!("pdfium: {}", e)))?;
+
+    let render_config = PdfRenderConfig::new()
+        .set_target_width(2480)  // A4 @ 300 DPI
+        .set_maximum_height(3508);
+
+    let mut pages_png = Vec::new();
+
+    for (i, page) in document.pages().iter().enumerate() {
+        let bitmap = page
+            .render_with_config(&render_config)
+            .map_err(|e| ScannerError::SystemError(format!("pdfium render page {}: {}", i + 1, e)))?;
+
+        let img = bitmap
+            .as_image();
+
+        let mut png_buf = Vec::new();
+        img.write_to(&mut Cursor::new(&mut png_buf), ::image::ImageFormat::Png)
+            .map_err(|e| ScannerError::SystemError(format!("PNG encode page {}: {}", i + 1, e)))?;
+
+        pages_png.push(png_buf);
+    }
+
+    Ok(pages_png)
+}
+
+/// Fallback: extract embedded images from PDF pages using lopdf.
+fn extract_pdf_pages_lopdf(file_path: &str) -> Result<Vec<Vec<u8>>, ScannerError> {
+    use lopdf::Document;
+
+    let doc = Document::load(file_path)
+        .map_err(|e| ScannerError::SystemError(format!("Lecture PDF: {}", e)))?;
+
+    let mut pages_png: Vec<Vec<u8>> = Vec::new();
+
+    let page_numbers = doc.get_pages();
+    let mut sorted_pages: Vec<(u32, lopdf::ObjectId)> = page_numbers.into_iter().collect();
+    sorted_pages.sort_by_key(|(num, _)| *num);
+
+    for (page_num, page_id) in &sorted_pages {
+        let page_images = extract_images_from_page(&doc, *page_id);
+
+        if let Some(png_data) = page_images {
+            pages_png.push(png_data);
+        } else {
+            log::warn!("PDF page {} : aucune image extractible (lopdf fallback)", page_num);
+        }
+    }
+
+    if pages_png.is_empty() {
+        return Err(ScannerError::SystemError(
+            "Impossible de lire ce PDF. Installez la bibliothèque pdfium pour le support complet des PDF.".into(),
+        ));
+    }
+
+    Ok(pages_png)
+}
+
+/// Dereference a lopdf Object if it's an indirect reference.
+fn deref_object<'a>(doc: &'a lopdf::Document, obj: &'a lopdf::Object) -> Option<&'a lopdf::Object> {
+    match obj {
+        lopdf::Object::Reference(r) => doc.get_object(*r).ok(),
+        other => Some(other),
+    }
+}
+
+/// Resolve Resources for a page, walking up the page tree for inherited Resources.
+fn resolve_page_resources<'a>(doc: &'a lopdf::Document, page_id: lopdf::ObjectId) -> Option<&'a lopdf::Object> {
+    let mut current_id = page_id;
+    for _ in 0..10 {
+        let obj = doc.get_object(current_id).ok()?;
+        let dict = obj.as_dict().ok()?;
+
+        // Check if this node has Resources
+        if let Ok(resources) = dict.get(b"Resources") {
+            return Some(resources);
+        }
+
+        // Walk up to Parent
+        let parent = dict.get(b"Parent").ok()?;
+        match parent {
+            lopdf::Object::Reference(r) => current_id = *r,
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// Collect all image streams from an XObject dictionary, recursing into Form XObjects.
+fn collect_image_streams(
+    doc: &lopdf::Document,
+    xobjects: &lopdf::Dictionary,
+    depth: u8,
+) -> Vec<lopdf::Stream> {
+    if depth > 3 {
+        return Vec::new();
+    }
+
+    let mut images = Vec::new();
+
+    for (_name, obj_ref) in xobjects.iter() {
+        let obj_id = match obj_ref {
+            lopdf::Object::Reference(r) => *r,
+            _ => continue,
+        };
+
+        let stream = match doc.get_object(obj_id) {
+            Ok(lopdf::Object::Stream(ref s)) => s.clone(),
+            _ => continue,
+        };
+
+        let subtype: &[u8] = stream
+            .dict
+            .get(b"Subtype")
+            .ok()
+            .and_then(|s| s.as_name().ok())
+            .unwrap_or(b"");
+
+        if subtype == b"Image" {
+            images.push(stream);
+        } else if subtype == b"Form" {
+            // Recurse into Form XObject's own Resources
+            if let Ok(form_resources) = stream.dict.get(b"Resources") {
+                if let Some(form_res) = deref_object(doc, form_resources) {
+                    if let Ok(form_dict) = form_res.as_dict() {
+                        if let Ok(inner_xobjects) = form_dict.get(b"XObject") {
+                            if let Some(inner_xobj) = deref_object(doc, inner_xobjects) {
+                                if let Ok(inner_dict) = inner_xobj.as_dict() {
+                                    images.extend(collect_image_streams(doc, inner_dict, depth + 1));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    images
+}
+
+/// Get the filter name from a stream, handling both single name and array of names.
+fn get_stream_filter(stream: &lopdf::Stream) -> Vec<u8> {
+    match stream.dict.get(b"Filter").ok() {
+        Some(lopdf::Object::Name(name)) => name.clone(),
+        Some(lopdf::Object::Array(arr)) => {
+            // Return the first filter (outermost encoding)
+            arr.first()
+                .and_then(|f| {
+                    if let lopdf::Object::Name(n) = f { Some(n.clone()) } else { None }
+                })
+                .unwrap_or_default()
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Try to decode a PDF image stream to a PNG.
+fn decode_pdf_image(doc: &lopdf::Document, stream: &lopdf::Stream) -> Option<Vec<u8>> {
+    let width = stream.dict.get(b"Width")
+        .ok()
+        .and_then(|w| w.as_i64().ok())
+        .unwrap_or(0) as u32;
+    let height = stream.dict.get(b"Height")
+        .ok()
+        .and_then(|h| h.as_i64().ok())
+        .unwrap_or(0) as u32;
+
+    if width == 0 || height == 0 {
+        return None;
+    }
+
+    let filter = get_stream_filter(stream);
+
+    // For DCTDecode (JPEG) or JPXDecode (JPEG2000), the raw content IS the image
+    if filter == b"DCTDecode" || filter == b"JPXDecode" {
+        let data = &stream.content;
+        if let Ok(img) = ::image::load_from_memory(data) {
+            let mut png_buf = Vec::new();
+            if img.write_to(&mut Cursor::new(&mut png_buf), ::image::ImageFormat::Png).is_ok() {
+                return Some(png_buf);
+            }
+        }
+        return None;
+    }
+
+    // For FlateDecode or no filter, decompress and reconstruct the image
+    let decoded = stream.decompressed_content().ok();
+    let raw_data = decoded.as_deref().unwrap_or(&stream.content);
+
+    // Try to load directly with image crate (handles PNG-like streams)
+    if let Ok(img) = ::image::load_from_memory(raw_data) {
+        let mut png_buf = Vec::new();
+        if img.write_to(&mut Cursor::new(&mut png_buf), ::image::ImageFormat::Png).is_ok() {
+            return Some(png_buf);
+        }
+    }
+
+    // Manual reconstruction from raw pixel data
+    let color_space = resolve_color_space(doc, stream);
+    let bits = stream.dict.get(b"BitsPerComponent")
+        .ok()
+        .and_then(|b| b.as_i64().ok())
+        .unwrap_or(8) as u8;
+
+    if bits != 8 {
+        log::debug!("PDF image: unsupported BitsPerComponent={}", bits);
+        return None;
+    }
+
+    let expected_rgb = (width * height * 3) as usize;
+    let expected_gray = (width * height) as usize;
+    let expected_rgba = (width * height * 4) as usize;
+
+    let dyn_image = if (color_space == "DeviceRGB" || color_space == "ICCBased-3") && raw_data.len() >= expected_rgb {
+        ::image::RgbImage::from_raw(width, height, raw_data[..expected_rgb].to_vec())
+            .map(::image::DynamicImage::ImageRgb8)
+    } else if (color_space == "DeviceGray" || color_space == "ICCBased-1" || color_space == "CalGray") && raw_data.len() >= expected_gray {
+        ::image::GrayImage::from_raw(width, height, raw_data[..expected_gray].to_vec())
+            .map(::image::DynamicImage::ImageLuma8)
+    } else if color_space == "DeviceCMYK" && raw_data.len() >= expected_rgba {
+        // Convert CMYK to RGB
+        let mut rgb_data = Vec::with_capacity(expected_rgb);
+        for chunk in raw_data[..expected_rgba].chunks_exact(4) {
+            let (c, m, y, k) = (chunk[0] as f32 / 255.0, chunk[1] as f32 / 255.0, chunk[2] as f32 / 255.0, chunk[3] as f32 / 255.0);
+            rgb_data.push(((1.0 - c) * (1.0 - k) * 255.0) as u8);
+            rgb_data.push(((1.0 - m) * (1.0 - k) * 255.0) as u8);
+            rgb_data.push(((1.0 - y) * (1.0 - k) * 255.0) as u8);
+        }
+        ::image::RgbImage::from_raw(width, height, rgb_data)
+            .map(::image::DynamicImage::ImageRgb8)
+    } else {
+        log::debug!("PDF image: colorspace={} data_len={} expected_rgb={} expected_gray={}", color_space, raw_data.len(), expected_rgb, expected_gray);
+        None
+    };
+
+    if let Some(img) = dyn_image {
+        let mut png_buf = Vec::new();
+        if img.write_to(&mut Cursor::new(&mut png_buf), ::image::ImageFormat::Png).is_ok() {
+            return Some(png_buf);
+        }
+    }
+
+    None
+}
+
+/// Resolve the color space of a PDF image stream to a simple string.
+fn resolve_color_space(doc: &lopdf::Document, stream: &lopdf::Stream) -> String {
+    match stream.dict.get(b"ColorSpace").ok() {
+        Some(lopdf::Object::Name(name)) => String::from_utf8_lossy(name).to_string(),
+        Some(lopdf::Object::Array(arr)) => {
+            // e.g. [/ICCBased 10 0 R] — resolve the profile to get channel count
+            let base_name = arr.first()
+                .and_then(|o| if let lopdf::Object::Name(n) = o { Some(n.clone()) } else { None })
+                .unwrap_or_default();
+            let base_str = String::from_utf8_lossy(&base_name).to_string();
+
+            if base_str == "ICCBased" {
+                // Get the ICC profile stream to determine channels
+                if let Some(lopdf::Object::Reference(r)) = arr.get(1) {
+                    if let Ok(lopdf::Object::Stream(ref profile)) = doc.get_object(*r) {
+                        let n = profile.dict.get(b"N")
+                            .ok()
+                            .and_then(|v| v.as_i64().ok())
+                            .unwrap_or(3);
+                        return format!("ICCBased-{}", n);
+                    }
+                }
+            }
+            base_str
+        }
+        Some(lopdf::Object::Reference(r)) => {
+            if let Ok(obj) = doc.get_object(*r) {
+                if let Ok(name) = obj.as_name() {
+                    return String::from_utf8_lossy(name).to_string();
+                }
+            }
+            "DeviceRGB".to_string()
+        }
+        _ => "DeviceRGB".to_string(),
+    }
+}
+
+/// Try to extract the main image from a single PDF page.
+fn extract_images_from_page(doc: &lopdf::Document, page_id: lopdf::ObjectId) -> Option<Vec<u8>> {
+    // Resolve Resources with inheritance
+    let resources_obj = resolve_page_resources(doc, page_id)?;
+    let resources = deref_object(doc, resources_obj)?;
+    let resources_dict = resources.as_dict().ok()?;
+
+    let xobjects_obj = resources_dict.get(b"XObject").ok()?;
+    let xobjects = deref_object(doc, xobjects_obj)?;
+    let xobjects_dict = xobjects.as_dict().ok()?;
+
+    log::debug!("PDF page {:?}: found {} XObjects", page_id, xobjects_dict.len());
+
+    // Collect all image streams (including from nested Form XObjects)
+    let image_streams = collect_image_streams(doc, xobjects_dict, 0);
+
+    log::debug!("PDF page {:?}: found {} image streams", page_id, image_streams.len());
+
+    // Find the largest decodable image
+    let mut best_image: Option<Vec<u8>> = None;
+    let mut best_size: usize = 0;
+
+    for stream in &image_streams {
+        let width = stream.dict.get(b"Width")
+            .ok()
+            .and_then(|w| w.as_i64().ok())
+            .unwrap_or(0) as usize;
+        let height = stream.dict.get(b"Height")
+            .ok()
+            .and_then(|h| h.as_i64().ok())
+            .unwrap_or(0) as usize;
+        let pixel_count = width * height;
+
+        if pixel_count <= best_size {
+            continue;
+        }
+
+        if let Some(png) = decode_pdf_image(doc, stream) {
+            best_size = pixel_count;
+            best_image = Some(png);
+        }
+    }
+
+    best_image
+}
+
+/// Extract each frame of a multi-page TIFF as a PNG image.
+fn extract_tiff_pages(file_path: &str) -> Result<Vec<Vec<u8>>, ScannerError> {
+    let file = std::fs::File::open(file_path)
+        .map_err(|e| ScannerError::SystemError(format!("Lecture TIFF: {}", e)))?;
+    let mut decoder = tiff::decoder::Decoder::new(std::io::BufReader::new(file))
+        .map_err(|e| ScannerError::SystemError(format!("Décodage TIFF: {}", e)))?;
+
+    let mut pages: Vec<Vec<u8>> = Vec::new();
+
+    loop {
+        let (width, height) = decoder.dimensions()
+            .map_err(|e| ScannerError::SystemError(format!("Dimensions TIFF: {}", e)))?;
+
+        let decode_result = decoder.read_image()
+            .map_err(|e| ScannerError::SystemError(format!("Lecture frame TIFF: {}", e)))?;
+
+        let dyn_image = match decode_result {
+            tiff::decoder::DecodingResult::U8(data) => {
+                let channels = data.len() / (width as usize * height as usize);
+                match channels {
+                    1 => ::image::GrayImage::from_raw(width, height, data)
+                        .map(::image::DynamicImage::ImageLuma8),
+                    3 => ::image::RgbImage::from_raw(width, height, data)
+                        .map(::image::DynamicImage::ImageRgb8),
+                    4 => ::image::RgbaImage::from_raw(width, height, data)
+                        .map(::image::DynamicImage::ImageRgba8),
+                    _ => None,
+                }
+            }
+            tiff::decoder::DecodingResult::U16(data) => {
+                // Convert 16-bit to 8-bit
+                let data8: Vec<u8> = data.iter().map(|&v| (v >> 8) as u8).collect();
+                let channels = data8.len() / (width as usize * height as usize);
+                match channels {
+                    1 => ::image::GrayImage::from_raw(width, height, data8)
+                        .map(::image::DynamicImage::ImageLuma8),
+                    3 => ::image::RgbImage::from_raw(width, height, data8)
+                        .map(::image::DynamicImage::ImageRgb8),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+
+        if let Some(img) = dyn_image {
+            let mut png_buf = Vec::new();
+            img.write_to(&mut Cursor::new(&mut png_buf), ::image::ImageFormat::Png)
+                .map_err(|e| ScannerError::SystemError(format!("Conversion PNG: {}", e)))?;
+            pages.push(png_buf);
+        }
+
+        // Try to move to the next frame
+        match decoder.next_image() {
+            Ok(()) => continue,
+            Err(tiff::TiffError::FormatError(_)) => break,
+            Err(tiff::TiffError::LimitsExceeded) => break,
+            Err(_) => break,
+        }
+    }
+
+    if pages.is_empty() {
+        return Err(ScannerError::SystemError("Aucune page trouvée dans le TIFF".into()));
+    }
+
+    Ok(pages)
+}
+
 #[tauri::command]
 async fn save_document_as_pdf(
     doc_id: String,
@@ -357,6 +886,64 @@ async fn print_document(
         use std::process::Command;
         Command::new("lp")
             .arg(&path_str)
+            .spawn()
+            .map_err(|e| ScannerError::SystemError(format!("Impression: {}", e)))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn print_multipage_document(
+    multipage_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), ScannerError> {
+    // Collect all pages' PNG data
+    let page_data: Vec<(Vec<u8>, u32)> = {
+        let mp_docs = state.multi_page_docs.lock().unwrap();
+        let mp = mp_docs
+            .get(&multipage_id)
+            .ok_or_else(|| ScannerError::SystemError("Document multi-pages non trouvé".into()))?;
+        let docs = state.documents.lock().unwrap();
+        mp.page_ids.iter().map(|pid| {
+            let doc = docs.get(pid).ok_or_else(|| ScannerError::SystemError("Page non trouvée".into()))?;
+            Ok((doc.png_data.clone(), doc.dpi))
+        }).collect::<Result<Vec<_>, ScannerError>>()?
+    };
+
+    // Generate a temporary PDF with all pages
+    let pages: Vec<processing::PageData> = page_data.iter().map(|(data, dpi)| {
+        processing::PageData { png_data: data, dpi: *dpi, ocr: None }
+    }).collect();
+
+    let tmp_path = std::env::temp_dir().join(format!("print_{}.pdf", Uuid::new_v4()));
+    let tmp_str = tmp_path.to_string_lossy().to_string();
+    processing::save_as_pdf_multipage(&pages, &tmp_str, "Impression")?;
+
+    // Print the PDF
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+        Command::new("cmd")
+            .args(["/c", "start", "/min", "", &tmp_str])
+            .spawn()
+            .map_err(|e| ScannerError::SystemError(format!("Impression: {}", e)))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        Command::new("lpr")
+            .arg(&tmp_str)
+            .spawn()
+            .map_err(|e| ScannerError::SystemError(format!("Impression: {}", e)))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        Command::new("lp")
+            .arg(&tmp_str)
             .spawn()
             .map_err(|e| ScannerError::SystemError(format!("Impression: {}", e)))?;
     }
@@ -1648,10 +2235,12 @@ pub fn run() {
             // v0.1.0
             list_scanners,
             scan_document,
+            import_file,
             save_document_as_pdf,
             save_document_as_image,
             auto_crop_document,
             print_document,
+            print_multipage_document,
             load_settings,
             save_app_settings,
             get_documents_dir,

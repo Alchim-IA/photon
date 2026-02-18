@@ -2,7 +2,7 @@
   <img src="screenshots/dark-mode.png" alt="Photon" width="700" />
 </p>
 
-<h1 align="center">Photon</h1>
+<h1 align="center">Photon v1.0.0</h1>
 
 <p align="center">
   <strong>Scanner intelligent de documents, natif et multi-plateforme</strong>
@@ -42,6 +42,7 @@
 | **Ultra léger** | Binaire ~8 Mo, consommation mémoire minimale grâce à Tauri 2 + Rust |
 | **OCR intégré** | Reconnaissance de texte via Tesseract embarqué, 8 langues, aucune dépendance externe |
 | **Intelligence** | Classification automatique de 12 types de documents + extraction de données |
+| **Import fichiers** | Glisser-déposer de PDF, TIFF multi-pages, PNG, JPEG, BMP, WebP |
 | **Multi-pages** | Création de PDF multi-pages avec réordonnement par glisser-déposer |
 | **Automatisation** | Moteur de règles configurable (conditions ET/OU, actions automatiques) |
 | **Édition complète** | Rotation, recadrage, débruitage, redressement, ajustements temps réel |
@@ -73,10 +74,6 @@ Numérisez plusieurs pages d'un coup avec le mode batch :
 
 #### Profils de numérisation
 
-<p align="center">
-  <img src="screenshots/settings.png" alt="Profils de numérisation" width="500" />
-</p>
-
 Sauvegardez vos configurations fréquentes en profils réutilisables :
 
 - **Factures 300dpi N&B** : Noir et blanc, 300 DPI, A4
@@ -97,11 +94,31 @@ Clic droit sur un profil pour le supprimer. Créez-en autant que nécessaire.
 
 ---
 
-### OCR (Reconnaissance de texte)
+### Import de fichiers (Glisser-Déposer)
 
-<p align="center">
-  <img src="screenshots/ocr.png" alt="OCR et extraction de texte" width="600" />
-</p>
+Importez directement des fichiers existants dans Photon par **glisser-déposer** depuis votre gestionnaire de fichiers :
+
+```
+Glisser un fichier sur la fenêtre → Overlay d'import → Pages ajoutées automatiquement
+```
+
+#### Formats supportés
+
+| Format | Détails |
+|--------|---------|
+| **PDF** | Extraction des images embarquées, une page par image |
+| **TIFF multi-pages** | Chaque frame extraite individuellement |
+| **PNG / JPEG / BMP / WebP** | Import direct comme document unique |
+
+#### Comportement contextuel
+
+- **Sans document multi-pages actif** : chaque page/image importée crée un document individuel dans la liste
+- **Avec document multi-pages actif** : les pages sont automatiquement ajoutées au document en cours d'assemblage
+- **Multi-fichiers** : déposez plusieurs fichiers d'un coup, tous sont traités séquentiellement
+
+---
+
+### OCR (Reconnaissance de texte)
 
 Extrayez le texte de vos documents numérisés avec l'OCR intégré :
 
@@ -202,10 +219,6 @@ Les règles supportent la logique **ET** (toutes les conditions) ou **OU** (au m
 
 ### Édition d'image
 
-<p align="center">
-  <img src="screenshots/edit.png" alt="Édition d'image" width="600" />
-</p>
-
 Le panneau d'édition offre un ensemble complet d'outils de traitement :
 
 #### Rotation & Retournement
@@ -245,16 +258,18 @@ Cliquez **Appliquer** pour valider ou **Annuler** pour revenir à l'original.
 
 ### Documents multi-pages
 
-Créez des documents PDF multi-pages en combinant plusieurs numérisations :
+Créez des documents PDF multi-pages en combinant plusieurs numérisations ou imports :
 
-1. **Créez** un nouveau document multi-pages
-2. **Ajoutez** des pages depuis vos numérisations
-3. **Réordonnez** par glisser-déposer
-4. **Exportez** en PDF unique
+1. **Importez ou numérisez** des pages (glisser-déposer de PDF/TIFF/images)
+2. **Prévisualisez** dans la grille centrale avec grandes miniatures
+3. **Réordonnez** par glisser-déposer dans la grille
+4. **Éditez** via le menu contextuel (rotation, retournement, suppression)
+5. **Exportez** en PDF unique, images individuelles ou impression directe
 
-- Ajout de la page courante en un clic
-- Suppression de pages individuelles
-- Combinaison de documents existants en un seul PDF
+- Aperçu central large avec miniatures redimensionnées
+- Menu contextuel complet : rotation (90°/180°/270°), retournement (H/V), suppression
+- Export multi-pages : PDF combine toutes les pages, Image exporte chaque page séparément
+- Impression directe de toutes les pages en un clic
 
 ---
 
@@ -304,6 +319,7 @@ Accédez facilement à vos numérisations passées :
 - **Duplication** d'un document existant
 - **Suppression** individuelle
 - **Menu contextuel** : renommer, dupliquer, ajouter aux pages, supprimer
+- **Menu contextuel multipage** : rotation, retournement, retirer du multipage, supprimer
 
 ---
 
@@ -396,10 +412,6 @@ Le binaire sera généré dans `src-tauri/target/release/bundle/`.
 
 ### Premier lancement — Assistant d'accueil
 
-<p align="center">
-  <img src="screenshots/onboarding.png" alt="Assistant d'accueil" width="600" />
-</p>
-
 Au premier lancement, un assistant vous guide en **5 étapes** :
 
 1. **Langue** — Choisissez français ou anglais
@@ -442,7 +454,7 @@ Après l'onboarding, un **tour guidé en 7 étapes** vous présente l'interface 
 3. **PDF** — L'export en PDF
 4. **OCR** — La reconnaissance de texte
 5. **Analyse** — La classification intelligente
-6. **Panneaux** — Config, Édition, Pages, Intelligence
+6. **Panneaux** — Config, Édition, Intelligence
 7. **Paramètres** — Personnalisation de l'application
 
 Le tour peut être fermé à tout moment avec le bouton **Fermer le guide**.
@@ -452,10 +464,6 @@ Le tour peut être fermé à tout moment avec le bouton **Fermer le guide**.
 ## Paramètres
 
 Accédez aux paramètres via le bouton engrenage ou le panneau de configuration.
-
-<p align="center">
-  <img src="screenshots/settings.png" alt="Paramètres" width="500" />
-</p>
 
 ### Général
 
@@ -603,7 +611,7 @@ En pratique, la plupart des scanners USB et réseau récents sont compatibles.
 <details>
 <summary><strong>Puis-je utiliser Photon sans scanner ?</strong></summary>
 
-L'application est conçue pour fonctionner avec un scanner physique. Sans scanner connecté, vous pouvez toujours parcourir l'historique des documents précédemment numérisés.
+Oui ! Même sans scanner physique, vous pouvez importer des fichiers (PDF, TIFF, images) par glisser-déposer, les éditer, les organiser en multi-pages et les exporter.
 </details>
 
 <details>
@@ -642,12 +650,13 @@ Créez un fichier vide nommé `portable.marker` dans le même dossier que l'exé
 ### Stack technique
 
 ```
-Frontend : React 19 + TypeScript 5.8 + Vite 7
+Frontend : React 19 + TypeScript 5.8 + Vite 7 + @dnd-kit
 Backend  : Rust (édition 2021) + Tauri 2
 OCR      : Tesseract (embarqué via tesseract-rs)
-PDF      : printpdf 0.7
-Image    : image 0.25
+PDF      : pdfium-render (rendu) + printpdf (export) + lopdf (fallback)
+Image    : image 0.25 + tiff 0.9
 UI       : Design Frosted Touch (glassmorphisme)
+CI/CD    : GitHub Actions (build multi-plateforme + release automatique)
 ```
 
 ### Backends natifs par plateforme

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
   DndContext,
-  closestCenter,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -15,7 +16,7 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
-  horizontalListSortingStrategy,
+  rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useTranslation, type Language } from "./contexts/LanguageContext";
@@ -256,17 +257,23 @@ const Icons = {
   sparkle: (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" /></svg>),
 };
 
-// ─── Sortable Page Item ──────────────────────────────────────────
-function SortablePageItem({
+// ─── Sortable Preview Page (large, for central preview area) ────
+function SortablePreviewPage({
   uniqueId,
   index,
   doc,
+  isSelected,
+  onSelect,
   onRemove,
+  onContextMenu,
 }: {
   uniqueId: string;
   index: number;
   doc: ScannedDocument | undefined;
+  isSelected: boolean;
+  onSelect: () => void;
   onRemove: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: uniqueId });
   const style = {
@@ -275,14 +282,22 @@ function SortablePageItem({
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="multipage-item">
-      <div className="multipage-item-number">{index + 1}</div>
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`multipage-preview-item${isSelected ? " selected" : ""}`}
+      onClick={onSelect}
+      onContextMenu={onContextMenu}
+    >
+      <div className="multipage-preview-item-number">{index + 1}</div>
       {doc ? (
-        <img src={doc.dataUrl} alt={`Page ${index + 1}`} className="multipage-item-thumb" />
+        <img src={doc.dataUrl} alt={`Page ${index + 1}`} className="multipage-preview-item-thumb" />
       ) : (
-        <div className="multipage-item-placeholder">?</div>
+        <div className="multipage-preview-item-placeholder">?</div>
       )}
-      <button className="multipage-item-remove" onClick={(e) => { e.stopPropagation(); onRemove(); }} aria-label="Remove page">
+      <button className="multipage-preview-item-remove" onClick={(e) => { e.stopPropagation(); onRemove(); }} aria-label="Remove page">
         {Icons.close}
       </button>
     </div>
@@ -336,7 +351,7 @@ function App() {
   const [settingsTab, setSettingsTab] = useState<"general" | "scan" | "export" | "app">("general");
 
   // v0.3.0: Right panel mode
-  const [rightPanelMode, setRightPanelMode] = useState<"config" | "edit" | "multipage" | "intelligence">("config");
+  const [rightPanelMode, setRightPanelMode] = useState<"config" | "edit" | "intelligence">("config");
 
   // v0.3.0: Image adjustments
   const [adjustments, setAdjustments] = useState<ImageAdjustments>({ brightness: 0, contrast: 0, saturation: 0, sharpness: 0 });
@@ -354,6 +369,10 @@ function App() {
   const [batchMode, setBatchMode] = useState(false);
   const [batchPageCount, setBatchPageCount] = useState(5);
 
+  // File drag-and-drop import
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
   // v0.6.0: Intelligence
   const [analysisResult, setAnalysisResult] = useState<AnalysisResultDto | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -364,7 +383,7 @@ function App() {
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
 
   // v0.4.0: Context menu
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; docId: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; docId: string; pageIndex?: number } | null>(null);
   const [renamingDocId, setRenamingDocId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
@@ -406,7 +425,7 @@ function App() {
   });
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -517,6 +536,90 @@ function App() {
     }
   };
 
+  // ── File drag-and-drop import ──
+  const importFiles = useCallback(async (paths: string[]) => {
+    const supported = [".pdf", ".tif", ".tiff", ".png", ".jpg", ".jpeg", ".bmp", ".webp"];
+    const validPaths = paths.filter((p) => supported.some((ext) => p.toLowerCase().endsWith(ext)));
+    if (validPaths.length === 0) return;
+
+    setIsImporting(true);
+    setStatusMessage(t("status.importing"));
+    setStatusType("scanning");
+
+    // Collect all imported pages
+    const allNewDocs: ScannedDocument[] = [];
+
+    for (const filePath of validPaths) {
+      try {
+        const results = await invoke<ScanResultDto[]>("import_file", { filePath });
+        const newDocs: ScannedDocument[] = results.map((r) => ({
+          id: r.id,
+          name: r.name,
+          date: r.date,
+          width: r.width,
+          height: r.height,
+          dataUrl: `data:image/png;base64,${r.image_base64}`,
+        }));
+
+        setDocuments((prev) => [...prev, ...newDocs]);
+        allNewDocs.push(...newDocs);
+      } catch (err) {
+        setStatusMessage(t("status.importError", { error: String(err) }));
+        setStatusType("error");
+      }
+    }
+
+    if (allNewDocs.length > 0) {
+      // Select first imported document
+      setSelectedDocument(allNewDocs[0]);
+
+      // Use existing multipage or create one automatically
+      let mpDoc = multipageDoc;
+      if (!mpDoc) {
+        try {
+          const name = `Import_${new Date().toISOString().slice(0, 10)}`;
+          mpDoc = await invoke<MultiPageDocDto>("create_multipage_document", { name });
+        } catch { /* ignore */ }
+      }
+
+      // Add all pages to multipage document
+      if (mpDoc) {
+        for (const doc of allNewDocs) {
+          try {
+            mpDoc = await invoke<MultiPageDocDto>("add_page_to_document", {
+              multipageId: mpDoc.id,
+              docId: doc.id,
+              position: null,
+            });
+          } catch { /* ignore individual page add errors */ }
+        }
+        setMultipageDoc(mpDoc);
+        setActiveView("preview");
+      }
+
+      setStatusMessage(t("status.importComplete", { count: allNewDocs.length }));
+      setStatusType("ready");
+    }
+    setIsImporting(false);
+  }, [multipageDoc, t]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    const unlisten = appWindow.onDragDropEvent((event) => {
+      if (event.payload.type === "over") {
+        setIsDragOver(true);
+      } else if (event.payload.type === "drop") {
+        setIsDragOver(false);
+        if (event.payload.paths?.length) {
+          importFiles(event.payload.paths);
+        }
+      } else if (event.payload.type === "leave") {
+        setIsDragOver(false);
+      }
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [importFiles]);
+
   // ── Scan ──
   const startScan = async () => {
     if (!selectedScanner || isScanning) return;
@@ -549,6 +652,10 @@ function App() {
 
   // ── Save as PDF ──
   const saveAsPdf = async () => {
+    // Multipage mode: save all pages as a single PDF
+    if (multipageDoc && multipageDoc.page_count > 0) {
+      return saveMultipagePdf();
+    }
     if (!selectedDocument) return;
     try {
       const path = await save({ defaultPath: selectedDocument.name.replace(/\.\w+$/, ".pdf"), filters: [{ name: "PDF", extensions: ["pdf"] }] });
@@ -566,6 +673,34 @@ function App() {
 
   // ── Save as Image ──
   const saveAsImage = async () => {
+    // Multipage mode: save all pages as individual images
+    if (multipageDoc && multipageDoc.page_count > 0) {
+      try {
+        const fmt = settings.default_format === "PDF" ? "PNG" : settings.default_format;
+        const ext = fmt.toLowerCase();
+        const baseName = multipageDoc.name || "Document";
+        const path = await save({
+          defaultPath: `${baseName}_page1.${ext}`,
+          filters: [{ name: "PNG", extensions: ["png"] }, { name: "JPEG", extensions: ["jpg", "jpeg"] }, { name: "TIFF", extensions: ["tiff", "tif"] }, { name: "BMP", extensions: ["bmp"] }],
+        });
+        if (!path) return;
+        setStatusMessage(t("status.saving"));
+        setStatusType("scanning");
+        const detectedFormat = path.split(".").pop()?.toUpperCase() || "PNG";
+        const dir = path.replace(/[/\\][^/\\]+$/, "");
+        for (let i = 0; i < multipageDoc.page_ids.length; i++) {
+          const pageId = multipageDoc.page_ids[i];
+          const pagePath = i === 0 ? path : `${dir}/${baseName}_page${i + 1}.${ext}`;
+          await invoke<string>("save_document_as_image", { docId: pageId, outputPath: pagePath, format: detectedFormat, quality: settings.quality });
+        }
+        setStatusMessage(t("status.imageSaved", { filename: `${multipageDoc.page_count} pages` }));
+        setStatusType("ready");
+      } catch (err) {
+        setStatusMessage(t("status.saveError", { error: String(err) }));
+        setStatusType("error");
+      }
+      return;
+    }
     if (!selectedDocument) return;
     try {
       const fmt = settings.default_format === "PDF" ? "PNG" : settings.default_format;
@@ -589,6 +724,20 @@ function App() {
 
   // ── Print ──
   const printDoc = async () => {
+    // Multipage mode: generate temp PDF and print it
+    if (multipageDoc && multipageDoc.page_count > 0) {
+      try {
+        setStatusMessage(t("status.printing"));
+        setStatusType("scanning");
+        await invoke("print_multipage_document", { multipageId: multipageDoc.id });
+        setStatusMessage(t("status.printed"));
+        setStatusType("ready");
+      } catch (err) {
+        setStatusMessage(t("status.printError", { error: String(err) }));
+        setStatusType("error");
+      }
+      return;
+    }
     if (!selectedDocument) return;
     try {
       setStatusMessage(t("status.printing"));
@@ -858,14 +1007,15 @@ function App() {
   };
 
   // ─── Rotation & Flip ────────────────────────────────────────────
-  const rotateDocument = async (direction: string) => {
-    if (!selectedDocument) return;
+  const rotateDocument = async (direction: string, targetDocId?: string) => {
+    const docId = targetDocId || selectedDocument?.id;
+    if (!docId) return;
     try {
       setStatusMessage(t("status.rotating", { deg: direction }));
       setStatusType("scanning");
-      const result = await invoke<ScanResultDto>("rotate_document", { docId: selectedDocument.id, direction });
+      const result = await invoke<ScanResultDto>("rotate_document", { docId, direction });
       const updated = dtoToDoc(result);
-      setSelectedDocument(updated);
+      if (selectedDocument?.id === updated.id) setSelectedDocument(updated);
       setDocuments((docs) => docs.map((d) => (d.id === updated.id ? updated : d)));
       setStatusMessage(t("status.rotateComplete", { deg: direction }));
       setStatusType("ready");
@@ -875,14 +1025,15 @@ function App() {
     }
   };
 
-  const flipDocument = async (axis: string) => {
-    if (!selectedDocument) return;
+  const flipDocument = async (axis: string, targetDocId?: string) => {
+    const docId = targetDocId || selectedDocument?.id;
+    if (!docId) return;
     try {
       setStatusMessage(t("status.flipping"));
       setStatusType("scanning");
-      const result = await invoke<ScanResultDto>("flip_document", { docId: selectedDocument.id, axis });
+      const result = await invoke<ScanResultDto>("flip_document", { docId, axis });
       const updated = dtoToDoc(result);
-      setSelectedDocument(updated);
+      if (selectedDocument?.id === updated.id) setSelectedDocument(updated);
       setDocuments((docs) => docs.map((d) => (d.id === updated.id ? updated : d)));
       setStatusMessage(t("status.flipComplete"));
       setStatusType("ready");
@@ -1000,19 +1151,7 @@ function App() {
     }
   };
 
-  // ─── Multi-page management ──────────────────────────────────────
-  const createMultipage = async () => {
-    try {
-      const doc = await invoke<MultiPageDocDto>("create_multipage_document", { name: `Document_${new Date().toISOString().slice(0, 10)}` });
-      setMultipageDoc(doc);
-      setRightPanelMode("multipage");
-      setStatusMessage(t("status.multipageCreated"));
-      setStatusType("ready");
-    } catch (err) {
-      setStatusMessage(t("status.error", { error: String(err) }));
-      setStatusType("error");
-    }
-  };
+
 
   const addPageToMultipage = async (docId: string) => {
     if (!multipageDoc) return;
@@ -1081,22 +1220,6 @@ function App() {
     }
   };
 
-  const combineDocumentsPdf = async () => {
-    if (documents.length < 2) return;
-    try {
-      const path = await save({ defaultPath: "Document_combined.pdf", filters: [{ name: "PDF", extensions: ["pdf"] }] });
-      if (!path) return;
-      setStatusMessage(t("status.combining"));
-      setStatusType("scanning");
-      await invoke<string>("combine_documents_as_pdf", { docIds: documents.map((d) => d.id), outputPath: path });
-      setStatusMessage(t("status.combinedSaved", { filename: path.split(/[/\\]/).pop() ?? "" }));
-      setStatusType("ready");
-    } catch (err) {
-      setStatusMessage(t("status.error", { error: String(err) }));
-      setStatusType("error");
-    }
-  };
-
   // ── Helpers ──
   const dtoToDoc = (result: ScanResultDto): ScannedDocument => ({
     id: result.id, name: result.name, date: result.date, width: result.width, height: result.height,
@@ -1107,12 +1230,39 @@ function App() {
   const dpiOptions = currentScanner?.capabilities.resolutions ?? [150, 300, 600, 1200];
   const colorOptions = currentScanner?.capabilities.color_modes ?? ["Couleur", "Niveaux de gris", "Noir et blanc"];
   const hasDocument = selectedDocument !== null;
+  const hasMultipage = multipageDoc !== null && multipageDoc.page_count > 0;
+  const canExport = hasDocument || hasMultipage;
   const hasAdjustments = adjustments.brightness !== 0 || adjustments.contrast !== 0 || adjustments.saturation !== 0 || adjustments.sharpness !== 0;
 
   return (
     <div className="app">
       {/* a11y: Skip link */}
       <a href="#main-content" className="skip-link">{t("a11y.skipToContent")}</a>
+
+      {/* Drag-and-drop overlay */}
+      {isDragOver && (
+        <div className="drop-overlay" aria-hidden="true">
+          <div className="drop-overlay-content">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <h2>{t("dropzone.title")}</h2>
+            <p>{t("dropzone.subtitle")}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Import loading overlay */}
+      {isImporting && (
+        <div className="drop-overlay importing" aria-hidden="true">
+          <div className="drop-overlay-content">
+            <div className="import-spinner" />
+            <h2>{t("status.importing")}</h2>
+          </div>
+        </div>
+      )}
 
       {/* Background */}
       <div className="bg-mesh" aria-hidden="true">
@@ -1184,9 +1334,9 @@ function App() {
 
           <div className="action-bar-divider" />
 
-          <button id="btn-save-pdf" className="btn" onClick={saveAsPdf} disabled={!hasDocument} title={t("actions.savePdf")}>{Icons.pdf}<span>{t("actions.pdf")}</span></button>
-          <button className="btn" onClick={saveAsImage} disabled={!hasDocument} title={t("actions.saveImage")}>{Icons.image}<span>{t("actions.image")}</span></button>
-          <button className="btn" onClick={printDoc} disabled={!hasDocument} title={t("actions.print")}>{Icons.print}<span>{t("actions.print")}</span></button>
+          <button id="btn-save-pdf" className="btn" onClick={saveAsPdf} disabled={!canExport} title={t("actions.savePdf")}>{Icons.pdf}<span>{t("actions.pdf")}</span></button>
+          <button className="btn" onClick={saveAsImage} disabled={!canExport} title={t("actions.saveImage")}>{Icons.image}<span>{t("actions.image")}</span></button>
+          <button className="btn" onClick={printDoc} disabled={!canExport} title={t("actions.print")}>{Icons.print}<span>{t("actions.print")}</span></button>
 
           <div className="action-bar-divider" />
 
@@ -1239,6 +1389,38 @@ function App() {
                       </div>
                       <span className="scan-progress-pct">{Math.round(Math.min(scanProgress, 100))}%</span>
                     </div>
+                  </div>
+                ) : multipageDoc && multipageDoc.page_count > 0 ? (
+                  <div className="multipage-preview">
+                    <div className="multipage-preview-header">
+                      <span className="multipage-preview-title">{multipageDoc.name}</span>
+                      <span className="multipage-preview-count">{t("multipage.pageCount", { count: multipageDoc.page_count })}</span>
+                      <div className="multipage-preview-actions">
+                        <button className="btn btn-sm btn-accent" onClick={saveMultipagePdf} disabled={multipageDoc.page_count === 0}>{Icons.pdf} {t("multipage.savePdf")}</button>
+                        <button className="btn btn-sm" onClick={() => setMultipageDoc(null)}>{Icons.close} {t("multipage.close")}</button>
+                      </div>
+                    </div>
+                    <DndContext sensors={sensors} collisionDetection={rectIntersection} onDragEnd={handleDragEnd}>
+                      <SortableContext items={multipageDoc.page_ids.map((_, i) => `page-${i}`)} strategy={rectSortingStrategy}>
+                        <div className="multipage-preview-grid">
+                          {multipageDoc.page_ids.map((pid, i) => {
+                            const pageDoc = documents.find((d) => d.id === pid);
+                            return (
+                              <SortablePreviewPage
+                                key={`page-${i}`}
+                                uniqueId={`page-${i}`}
+                                index={i}
+                                doc={pageDoc}
+                                isSelected={selectedDocument?.id === pid}
+                                onSelect={() => { if (pageDoc) setSelectedDocument(pageDoc); }}
+                                onRemove={() => removePageFromMultipage(i)}
+                                onContextMenu={(e) => { e.preventDefault(); if (pageDoc) setContextMenu({ x: e.clientX, y: e.clientY, docId: pid, pageIndex: i }); }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
                   </div>
                 ) : selectedDocument ? (
                   <div className="preview-image-container" style={{ width: `${zoomLevel * 2.8}px` }}>
@@ -1333,7 +1515,6 @@ function App() {
             <div id="panel-tabs" className="panel-mode-tabs" role="tablist" aria-label={t("a11y.panelTabs")}>
               <button role="tab" aria-selected={rightPanelMode === "config"} className={`panel-mode-tab ${rightPanelMode === "config" ? "active" : ""}`} onClick={() => setRightPanelMode("config")}>{t("panels.config")}</button>
               <button role="tab" aria-selected={rightPanelMode === "edit"} className={`panel-mode-tab ${rightPanelMode === "edit" ? "active" : ""}`} onClick={() => setRightPanelMode("edit")} disabled={!hasDocument}>{t("panels.edit")}</button>
-              <button role="tab" aria-selected={rightPanelMode === "multipage"} className={`panel-mode-tab ${rightPanelMode === "multipage" ? "active" : ""}`} onClick={() => setRightPanelMode("multipage")}>{t("panels.pages")}</button>
               <button role="tab" aria-selected={rightPanelMode === "intelligence"} className={`panel-mode-tab ${rightPanelMode === "intelligence" ? "active" : ""}`} onClick={() => setRightPanelMode("intelligence")} disabled={!hasDocument}>{t("panels.ai")}</button>
             </div>
 
@@ -1458,45 +1639,6 @@ function App() {
                     <button className="btn btn-sm edit-action-btn" onClick={() => denoiseDocument(1)} disabled={!hasDocument}>{Icons.noise}<span>{t("edit.denoiseLight")}</span></button>
                     <button className="btn btn-sm edit-action-btn" onClick={() => denoiseDocument(2)} disabled={!hasDocument}>{Icons.noise}<span>{t("edit.denoiseStrong")}</span></button>
                   </div>
-                </div>
-              </>
-            ) : rightPanelMode === "multipage" ? (
-              <>
-                <div className="config-header">{t("multipage.header")}</div>
-                <div className="config-section">
-                  {!multipageDoc ? (
-                    <div className="multipage-empty">
-                      <button className="btn btn-sm btn-accent" onClick={createMultipage}>{Icons.plus} {t("multipage.newDocument")}</button>
-                      {documents.length >= 2 && (
-                        <button className="btn btn-sm" onClick={combineDocumentsPdf} style={{ marginTop: 8 }}>{Icons.pdf} {t("multipage.combineAll")}</button>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="multipage-info">
-                        <span className="multipage-name">{multipageDoc.name}</span>
-                        <span className="multipage-count">{t("multipage.pageCount", { count: multipageDoc.page_count })}</span>
-                      </div>
-                      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                        <SortableContext items={multipageDoc.page_ids.map((_, i) => `page-${i}`)} strategy={horizontalListSortingStrategy}>
-                          <div className="multipage-grid">
-                            {multipageDoc.page_ids.map((pid, i) => (
-                              <SortablePageItem key={`page-${i}`} uniqueId={`page-${i}`} index={i} doc={documents.find((d) => d.id === pid)} onRemove={() => removePageFromMultipage(i)} />
-                            ))}
-                          </div>
-                        </SortableContext>
-                      </DndContext>
-                      {hasDocument && (
-                        <button className="btn btn-sm" onClick={() => addPageToMultipage(selectedDocument!.id)} style={{ marginTop: 8 }}>
-                          {Icons.plus} {t("multipage.addCurrentPage")}
-                        </button>
-                      )}
-                      <div className="edit-btn-row" style={{ marginTop: 12 }}>
-                        <button className="btn btn-sm btn-accent" onClick={saveMultipagePdf} disabled={multipageDoc.page_count === 0}>{Icons.pdf} {t("multipage.savePdf")}</button>
-                        <button className="btn btn-sm" onClick={() => setMultipageDoc(null)}>{t("multipage.close")}</button>
-                      </div>
-                    </>
-                  )}
                 </div>
               </>
             ) : (
@@ -1628,19 +1770,49 @@ function App() {
       {contextMenu && (
         <div className="context-menu-overlay" role="presentation" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}>
           <div className="context-menu" role="menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
-            <button role="menuitem" className="context-menu-item" onClick={() => { setRenamingDocId(contextMenu.docId); setRenameValue(documents.find((d) => d.id === contextMenu.docId)?.name ?? ""); setContextMenu(null); setActiveView("history"); }}>
-              {Icons.rename} {t("contextMenu.rename")}
-            </button>
-            <button role="menuitem" className="context-menu-item" onClick={() => { duplicateDoc(contextMenu.docId); setContextMenu(null); }}>
-              {Icons.duplicate} {t("contextMenu.duplicate")}
-            </button>
-            <button role="menuitem" className="context-menu-item" onClick={() => { if (multipageDoc) addPageToMultipage(contextMenu.docId); setContextMenu(null); }} disabled={!multipageDoc}>
-              {Icons.pages} {t("contextMenu.addToPages")}
-            </button>
-            <div className="context-menu-divider" />
-            <button role="menuitem" className="context-menu-item context-menu-danger" onClick={() => { deleteDocument(contextMenu.docId); setContextMenu(null); }}>
-              {Icons.delete} {t("contextMenu.delete")}
-            </button>
+            {contextMenu.pageIndex !== undefined ? (
+              <>
+                <button role="menuitem" className="context-menu-item" onClick={() => { rotateDocument("270", contextMenu.docId); setContextMenu(null); }}>
+                  {Icons.rotateLeft} {t("contextMenu.rotateLeft")}
+                </button>
+                <button role="menuitem" className="context-menu-item" onClick={() => { rotateDocument("90", contextMenu.docId); setContextMenu(null); }}>
+                  {Icons.rotateRight} {t("contextMenu.rotateRight")}
+                </button>
+                <button role="menuitem" className="context-menu-item" onClick={() => { rotateDocument("180", contextMenu.docId); setContextMenu(null); }}>
+                  ↻ {t("contextMenu.rotate180")}
+                </button>
+                <div className="context-menu-divider" />
+                <button role="menuitem" className="context-menu-item" onClick={() => { flipDocument("horizontal", contextMenu.docId); setContextMenu(null); }}>
+                  {Icons.flipH} {t("contextMenu.flipH")}
+                </button>
+                <button role="menuitem" className="context-menu-item" onClick={() => { flipDocument("vertical", contextMenu.docId); setContextMenu(null); }}>
+                  {Icons.flipV} {t("contextMenu.flipV")}
+                </button>
+                <div className="context-menu-divider" />
+                <button role="menuitem" className="context-menu-item" onClick={() => { removePageFromMultipage(contextMenu.pageIndex!); setContextMenu(null); }}>
+                  {Icons.close} {t("contextMenu.removeFromPages")}
+                </button>
+                <button role="menuitem" className="context-menu-item context-menu-danger" onClick={() => { deleteDocument(contextMenu.docId); setContextMenu(null); }}>
+                  {Icons.delete} {t("contextMenu.delete")}
+                </button>
+              </>
+            ) : (
+              <>
+                <button role="menuitem" className="context-menu-item" onClick={() => { setRenamingDocId(contextMenu.docId); setRenameValue(documents.find((d) => d.id === contextMenu.docId)?.name ?? ""); setContextMenu(null); setActiveView("history"); }}>
+                  {Icons.rename} {t("contextMenu.rename")}
+                </button>
+                <button role="menuitem" className="context-menu-item" onClick={() => { duplicateDoc(contextMenu.docId); setContextMenu(null); }}>
+                  {Icons.duplicate} {t("contextMenu.duplicate")}
+                </button>
+                <button role="menuitem" className="context-menu-item" onClick={() => { if (multipageDoc) addPageToMultipage(contextMenu.docId); setContextMenu(null); }} disabled={!multipageDoc}>
+                  {Icons.pages} {t("contextMenu.addToPages")}
+                </button>
+                <div className="context-menu-divider" />
+                <button role="menuitem" className="context-menu-item context-menu-danger" onClick={() => { deleteDocument(contextMenu.docId); setContextMenu(null); }}>
+                  {Icons.delete} {t("contextMenu.delete")}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -70,7 +70,14 @@
     "scannersFound": "{{count}} scanner(s) détecté(s)",
     "noScanners": "Aucun scanner détecté",
     "searchingScanners": "Recherche de scanners...",
-    "previewing": "Prévisualisation..."
+    "previewing": "Prévisualisation...",
+    "importing": "Importation en cours...",
+    "importComplete": "{{count}} page(s) importée(s)",
+    "importError": "Erreur d'importation: {{error}}"
+  },
+  "dropzone": {
+    "title": "Déposez vos fichiers ici",
+    "subtitle": "PDF, TIFF, PNG, JPEG, BMP, WebP"
   },
   "sidebar": {
     "devices": "Périphériques",
@@ -194,7 +201,13 @@
     "rename": "Renommer",
     "duplicate": "Dupliquer",
     "addToPages": "Ajouter aux pages",
-    "delete": "Supprimer"
+    "delete": "Supprimer",
+    "rotateLeft": "Rotation gauche (90°)",
+    "rotateRight": "Rotation droite (90°)",
+    "rotate180": "Rotation 180°",
+    "flipH": "Retourner horizontalement",
+    "flipV": "Retourner verticalement",
+    "removeFromPages": "Retirer du multipage"
   },
   "settings": {
     "title": "Paramètres",

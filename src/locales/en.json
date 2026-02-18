@@ -70,7 +70,14 @@
     "scannersFound": "{{count}} scanner(s) found",
     "noScanners": "No scanners found",
     "searchingScanners": "Searching for scanners...",
-    "previewing": "Previewing..."
+    "previewing": "Previewing...",
+    "importing": "Importing...",
+    "importComplete": "{{count}} page(s) imported",
+    "importError": "Import error: {{error}}"
+  },
+  "dropzone": {
+    "title": "Drop your files here",
+    "subtitle": "PDF, TIFF, PNG, JPEG, BMP, WebP"
   },
   "sidebar": {
     "devices": "Devices",
@@ -194,7 +201,13 @@
     "rename": "Rename",
     "duplicate": "Duplicate",
     "addToPages": "Add to pages",
-    "delete": "Delete"
+    "delete": "Delete",
+    "rotateLeft": "Rotate left (90°)",
+    "rotateRight": "Rotate right (90°)",
+    "rotate180": "Rotate 180°",
+    "flipH": "Flip horizontally",
+    "flipV": "Flip vertically",
+    "removeFromPages": "Remove from multipage"
   },
   "settings": {
     "title": "Settings",
