@@ -36,8 +36,6 @@ jobs:
             target: aarch64-apple-darwin
           - platform: macos-13
             target: x86_64-apple-darwin
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -74,18 +72,10 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install tesseract leptonica
 
-      - name: Install Windows dependencies (vcpkg)
-        if: runner.os == 'Windows'
-        run: |
-          vcpkg install tesseract:x64-windows-static-md leptonica:x64-windows-static-md
-        env:
-          VCPKG_ROOT: C:\vcpkg
-
       - run: npm ci
 
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VCPKG_ROOT: C:\vcpkg
         with:
           args: --target ${{ matrix.target }}

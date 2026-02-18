@@ -1,4 +1,5 @@
 use crate::scanner::*;
+use std::ffi::{CStr, CString};
 
 pub struct SaneBackend {
     #[cfg(target_os = "linux")]
