@@ -3,7 +3,7 @@ use crate::scanner::*;
 #[cfg(target_os = "macos")]
 use objc::runtime::{Class, Object, BOOL, YES};
 #[cfg(target_os = "macos")]
-use objc::{msg_send, sel, sel_impl, class};
+use objc::{class, msg_send, sel, sel_impl};
 #[cfg(target_os = "macos")]
 use std::ffi::CStr;
 #[cfg(target_os = "macos")]
@@ -30,13 +30,6 @@ impl IcaBackend {
 // ─── macOS ImageCaptureCore implementation ────────────────────────
 
 #[cfg(target_os = "macos")]
-struct DeviceBrowserState {
-    devices: Vec<ScannerDevice>,
-    ready: bool,
-}
-
-
-#[cfg(target_os = "macos")]
 fn nsstring_to_string(nsstring: *mut Object) -> String {
     if nsstring.is_null() {
         return String::new();
@@ -50,9 +43,81 @@ fn nsstring_to_string(nsstring: *mut Object) -> String {
     }
 }
 
+/// Run the NSRunLoop for the given duration to process async events (ICA device discovery, etc.)
+#[cfg(target_os = "macos")]
+fn run_loop_for(seconds: f64) {
+    unsafe {
+        let ns_date: *mut Object =
+            msg_send![class!(NSDate), dateWithTimeIntervalSinceNow: seconds];
+        let ns_runloop: *mut Object = msg_send![class!(NSRunLoop), currentRunLoop];
+        let _: () = msg_send![ns_runloop, runUntilDate: ns_date];
+    }
+}
+
+/// Execute a closure on the main thread synchronously using dispatch_sync.
+/// ICDeviceBrowser and most Cocoa APIs require the main thread.
+#[cfg(target_os = "macos")]
+fn on_main_thread_sync<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R + Send,
+    R: Send,
+{
+    extern "C" {
+        fn dispatch_get_main_queue() -> *mut Object;
+        fn dispatch_sync_f(queue: *mut Object, context: *mut std::ffi::c_void, work: extern "C" fn(*mut std::ffi::c_void));
+    }
+
+    // We need to check if we're already on the main thread to avoid deadlock
+    extern "C" {
+        fn pthread_main_np() -> i32;
+    }
+
+    if unsafe { pthread_main_np() } != 0 {
+        // Already on main thread, just call directly
+        return f();
+    }
+
+    struct Context<F, R> {
+        func: Option<F>,
+        result: Option<R>,
+    }
+
+    extern "C" fn trampoline<F, R>(ctx: *mut std::ffi::c_void)
+    where
+        F: FnOnce() -> R,
+    {
+        unsafe {
+            let ctx = &mut *(ctx as *mut Context<F, R>);
+            let func = ctx.func.take().unwrap();
+            ctx.result = Some(func());
+        }
+    }
+
+    let mut ctx = Context {
+        func: Some(f),
+        result: None,
+    };
+
+    unsafe {
+        let queue = dispatch_get_main_queue();
+        dispatch_sync_f(
+            queue,
+            &mut ctx as *mut Context<F, R> as *mut std::ffi::c_void,
+            trampoline::<F, R>,
+        );
+    }
+
+    ctx.result.unwrap()
+}
+
 #[cfg(target_os = "macos")]
 fn discover_devices(timeout_secs: u64) -> Result<Vec<ScannerDevice>, ScannerError> {
-    let devices: Arc<Mutex<Vec<ScannerDevice>>> = Arc::new(Mutex::new(Vec::new()));
+    on_main_thread_sync(move || discover_devices_main_thread(timeout_secs))
+}
+
+#[cfg(target_os = "macos")]
+fn discover_devices_main_thread(timeout_secs: u64) -> Result<Vec<ScannerDevice>, ScannerError> {
+    let mut result_devices = Vec::new();
 
     unsafe {
         // Create ICDeviceBrowser
@@ -61,17 +126,29 @@ fn discover_devices(timeout_secs: u64) -> Result<Vec<ScannerDevice>, ScannerErro
 
         let browser: *mut Object = msg_send![browser_class, new];
         if browser.is_null() {
-            return Err(ScannerError::SystemError("Impossible de créer ICDeviceBrowser".into()));
+            return Err(ScannerError::SystemError(
+                "Impossible de créer ICDeviceBrowser".into(),
+            ));
         }
 
-        // We need to create a delegate class to receive device notifications
-        // For simplicity, we'll use a polling approach with the browsed devices array
         let mask: u64 = 0x00000200; // ICDeviceTypeMaskScanner
         let _: () = msg_send![browser, setBrowsedDeviceTypeMask: mask];
         let _: () = msg_send![browser, start];
 
-        // Wait for device discovery
-        std::thread::sleep(Duration::from_secs(timeout_secs.min(3)));
+        // Run the run loop to allow device discovery events to be processed.
+        // Poll in shorter intervals to return as soon as devices are found.
+        let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs.min(5));
+        while std::time::Instant::now() < deadline {
+            run_loop_for(0.5);
+
+            let devices_array: *mut Object = msg_send![browser, devices];
+            if !devices_array.is_null() {
+                let count: usize = msg_send![devices_array, count];
+                if count > 0 {
+                    break;
+                }
+            }
+        }
 
         // Get the devices array
         let devices_array: *mut Object = msg_send![browser, devices];
@@ -87,7 +164,7 @@ fn discover_devices(timeout_secs: u64) -> Result<Vec<ScannerDevice>, ScannerErro
                 let name_ns: *mut Object = msg_send![device, name];
                 let name = nsstring_to_string(name_ns);
 
-                let manufacturer_ns: *mut Object = msg_send![device, manufacturer];  // Added semicolon
+                let manufacturer_ns: *mut Object = msg_send![device, manufacturer];
                 let vendor = nsstring_to_string(manufacturer_ns);
 
                 let uuid_ns: *mut Object = msg_send![device, UUIDString];
@@ -120,7 +197,8 @@ fn discover_devices(timeout_secs: u64) -> Result<Vec<ScannerDevice>, ScannerErro
                         let res_count: usize = msg_send![supported_res, count];
                         let mut resolutions = Vec::new();
                         for j in 0..res_count {
-                            let res_num: *mut Object = msg_send![supported_res, objectAtIndex: j];
+                            let res_num: *mut Object =
+                                msg_send![supported_res, objectAtIndex: j];
                             let res_val: u32 = msg_send![res_num, unsignedIntValue];
                             resolutions.push(res_val);
                         }
@@ -129,16 +207,18 @@ fn discover_devices(timeout_secs: u64) -> Result<Vec<ScannerDevice>, ScannerErro
                         }
                     }
 
-                    // Max scan area
-                    // physicalSize returns NSSize
+                    // Max scan area — physicalSize returns NSSize (width, height) in inches
                     let phys_size: (f64, f64) = msg_send![fu, physicalSize];
-                    caps.max_width_mm = phys_size.0 * 25.4; // inches to mm
+                    caps.max_width_mm = phys_size.0 * 25.4;
                     caps.max_height_mm = phys_size.1 * 25.4;
                 }
 
-                let mut devs = devices.lock().unwrap();
-                devs.push(ScannerDevice {
-                    id: if id.is_empty() { format!("ica-{}", i) } else { id },
+                result_devices.push(ScannerDevice {
+                    id: if id.is_empty() {
+                        format!("ica-{}", i)
+                    } else {
+                        id
+                    },
                     name,
                     vendor,
                     capabilities: caps,
@@ -150,12 +230,21 @@ fn discover_devices(timeout_secs: u64) -> Result<Vec<ScannerDevice>, ScannerErro
         let _: () = msg_send![browser, release];
     }
 
-    let result = devices.lock().unwrap().clone();
-    Ok(result)
+    Ok(result_devices)
 }
 
 #[cfg(target_os = "macos")]
 fn perform_scan(device_id: &str, options: &ScanOptions) -> Result<ScanResult, ScannerError> {
+    let device_id = device_id.to_string();
+    let options = options.clone();
+    on_main_thread_sync(move || perform_scan_main_thread(&device_id, &options))
+}
+
+#[cfg(target_os = "macos")]
+fn perform_scan_main_thread(
+    device_id: &str,
+    options: &ScanOptions,
+) -> Result<ScanResult, ScannerError> {
     unsafe {
         // Rediscover to get the device object
         let browser_class = Class::get("ICDeviceBrowser")
@@ -166,7 +255,18 @@ fn perform_scan(device_id: &str, options: &ScanOptions) -> Result<ScanResult, Sc
         let _: () = msg_send![browser, setBrowsedDeviceTypeMask: mask];
         let _: () = msg_send![browser, start];
 
-        std::thread::sleep(Duration::from_secs(2));
+        // Run the run loop for device discovery
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while std::time::Instant::now() < deadline {
+            run_loop_for(0.5);
+            let devices_array: *mut Object = msg_send![browser, devices];
+            if !devices_array.is_null() {
+                let count: usize = msg_send![devices_array, count];
+                if count > 0 {
+                    break;
+                }
+            }
+        }
 
         let devices_array: *mut Object = msg_send![browser, devices];
         if devices_array.is_null() {
@@ -196,7 +296,7 @@ fn perform_scan(device_id: &str, options: &ScanOptions) -> Result<ScanResult, Sc
 
         // Open the device
         let _: () = msg_send![target_device, requestOpenSession];
-        std::thread::sleep(Duration::from_millis(500));
+        run_loop_for(1.0);
 
         // Get the scanner functional unit
         let fu: *mut Object = msg_send![target_device, selectedFunctionalUnit];
@@ -204,7 +304,9 @@ fn perform_scan(device_id: &str, options: &ScanOptions) -> Result<ScanResult, Sc
             let _: () = msg_send![target_device, requestCloseSession];
             let _: () = msg_send![browser, stop];
             let _: () = msg_send![browser, release];
-            return Err(ScannerError::SystemError("Unité fonctionnelle non disponible".into()));
+            return Err(ScannerError::SystemError(
+                "Unité fonctionnelle non disponible".into(),
+            ));
         }
 
         // Configure scan parameters
@@ -246,20 +348,22 @@ fn perform_scan(device_id: &str, options: &ScanOptions) -> Result<ScanResult, Sc
 
         // Set download directory
         let tmp_path = tmp_dir.to_string_lossy().to_string();
-        let ns_tmp: *mut Object = msg_send![class!(NSString), stringWithUTF8String: tmp_path.as_ptr()];
+        let tmp_cstr = std::ffi::CString::new(tmp_path.clone()).unwrap();
+        let ns_tmp: *mut Object =
+            msg_send![class!(NSString), stringWithUTF8String: tmp_cstr.as_ptr()];
         let ns_url: *mut Object = msg_send![class!(NSURL), fileURLWithPath: ns_tmp];
         let _: () = msg_send![target_device, setDownloadsDirectory: ns_url];
 
         // Request scan
         let _: () = msg_send![target_device, requestScan];
 
-        // Wait for scan to complete (polling approach)
+        // Wait for scan to complete, running the run loop to process events
         let scan_timeout = Duration::from_secs(60);
         let start = std::time::Instant::now();
         let mut scan_complete = false;
 
         while start.elapsed() < scan_timeout {
-            std::thread::sleep(Duration::from_millis(500));
+            run_loop_for(0.5);
 
             // Check for new files in tmp_dir
             if let Ok(entries) = std::fs::read_dir(&tmp_dir) {
@@ -267,7 +371,11 @@ fn perform_scan(device_id: &str, options: &ScanOptions) -> Result<ScanResult, Sc
                     .filter_map(|e| e.ok())
                     .filter(|e| {
                         e.path().extension().map_or(false, |ext| {
-                            ext == "tiff" || ext == "tif" || ext == "jpeg" || ext == "jpg" || ext == "png"
+                            ext == "tiff"
+                                || ext == "tif"
+                                || ext == "jpeg"
+                                || ext == "jpg"
+                                || ext == "png"
                         })
                     })
                     .collect();
@@ -276,8 +384,9 @@ fn perform_scan(device_id: &str, options: &ScanOptions) -> Result<ScanResult, Sc
                     // Read the most recent file
                     let file_path = files.last().unwrap().path();
                     if let Ok(data) = std::fs::read(&file_path) {
-                        let img = ::image::load_from_memory(&data)
-                            .map_err(|e| ScannerError::SystemError(format!("Décodage: {}", e)))?;
+                        let img = ::image::load_from_memory(&data).map_err(|e| {
+                            ScannerError::SystemError(format!("Décodage: {}", e))
+                        })?;
 
                         let width = img.width();
                         let height = img.height();
@@ -285,7 +394,9 @@ fn perform_scan(device_id: &str, options: &ScanOptions) -> Result<ScanResult, Sc
                         let mut png_bytes = Vec::new();
                         let mut cursor = std::io::Cursor::new(&mut png_bytes);
                         img.write_to(&mut cursor, ::image::ImageFormat::Png)
-                            .map_err(|e| ScannerError::SystemError(format!("Encodage PNG: {}", e)))?;
+                            .map_err(|e| {
+                                ScannerError::SystemError(format!("Encodage PNG: {}", e))
+                            })?;
 
                         // Cleanup
                         let _ = std::fs::remove_file(&file_path);
@@ -310,10 +421,14 @@ fn perform_scan(device_id: &str, options: &ScanOptions) -> Result<ScanResult, Sc
         let _: () = msg_send![browser, release];
 
         if !scan_complete {
-            return Err(ScannerError::SystemError("Délai de numérisation dépassé".into()));
+            return Err(ScannerError::SystemError(
+                "Délai de numérisation dépassé".into(),
+            ));
         }
 
-        Err(ScannerError::SystemError("Échec de la lecture des données numérisées".into()))
+        Err(ScannerError::SystemError(
+            "Échec de la lecture des données numérisées".into(),
+        ))
     }
 }
 
@@ -325,7 +440,9 @@ impl ScannerBackend for IcaBackend {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            Err(ScannerError::SystemError("ICA n'est disponible que sur macOS".to_string()))
+            Err(ScannerError::SystemError(
+                "ICA n'est disponible que sur macOS".to_string(),
+            ))
         }
     }
 
@@ -337,7 +454,9 @@ impl ScannerBackend for IcaBackend {
         #[cfg(not(target_os = "macos"))]
         {
             let _ = options;
-            Err(ScannerError::SystemError("ICA n'est disponible que sur macOS".to_string()))
+            Err(ScannerError::SystemError(
+                "ICA n'est disponible que sur macOS".to_string(),
+            ))
         }
     }
 }
