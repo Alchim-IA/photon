@@ -45,7 +45,6 @@ fn nsstring_to_string(nsstring: *mut Object) -> String {
     }
 }
 
-/// Run the NSRunLoop for the given duration to process async events.
 #[cfg(target_os = "macos")]
 fn run_loop_for(seconds: f64) {
     unsafe {
@@ -56,7 +55,6 @@ fn run_loop_for(seconds: f64) {
     }
 }
 
-/// Execute a closure on the main thread synchronously using dispatch_sync.
 #[cfg(target_os = "macos")]
 fn on_main_thread_sync<F, R>(f: F) -> R
 where
@@ -113,38 +111,36 @@ where
 // ─── ICDeviceBrowserDelegate ─────────────────────────────────────
 
 #[cfg(target_os = "macos")]
-static REGISTER_DELEGATE: Once = Once::new();
-#[cfg(target_os = "macos")]
-const DELEGATE_CLASS_NAME: &str = "PhotonICBrowserDelegate";
+static REGISTER_BROWSER_DELEGATE: Once = Once::new();
 
 #[cfg(target_os = "macos")]
-fn delegate_class() -> &'static Class {
-    REGISTER_DELEGATE.call_once(|| {
+fn browser_delegate_class() -> &'static Class {
+    REGISTER_BROWSER_DELEGATE.call_once(|| {
         let superclass = Class::get("NSObject").unwrap();
-        let mut decl = ClassDecl::new(DELEGATE_CLASS_NAME, superclass).unwrap();
+        let mut decl = ClassDecl::new("PhotonICBrowserDelegate", superclass).unwrap();
 
         decl.add_ivar::<*mut std::ffi::c_void>("_devices_ptr");
 
         unsafe {
             decl.add_method(
                 sel!(deviceBrowser:didAddDevice:moreComing:),
-                did_add_device
+                browser_did_add_device
                     as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object, BOOL),
             );
             decl.add_method(
                 sel!(deviceBrowser:didRemoveDevice:moreGoing:),
-                did_remove_device
+                browser_did_remove_device
                     as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object, BOOL),
             );
         }
 
         decl.register();
     });
-    Class::get(DELEGATE_CLASS_NAME).unwrap()
+    Class::get("PhotonICBrowserDelegate").unwrap()
 }
 
 #[cfg(target_os = "macos")]
-extern "C" fn did_add_device(
+extern "C" fn browser_did_add_device(
     this: &mut Object,
     _sel: Sel,
     _browser: *mut Object,
@@ -162,12 +158,168 @@ extern "C" fn did_add_device(
 }
 
 #[cfg(target_os = "macos")]
-extern "C" fn did_remove_device(
+extern "C" fn browser_did_remove_device(
     _this: &mut Object,
     _sel: Sel,
     _browser: *mut Object,
     _device: *mut Object,
     _more_going: BOOL,
+) {
+}
+
+// ─── ICDeviceDelegate (for scan operations) ──────────────────────
+//
+// The scanner device needs a delegate that implements ICDeviceDelegate
+// and ICScannerDeviceDelegate to handle session open/close and scan
+// completion callbacks.
+
+#[cfg(target_os = "macos")]
+static REGISTER_DEVICE_DELEGATE: Once = Once::new();
+
+/// State flags stored as ivars on the device delegate.
+/// _session_open: bool (as u8)
+/// _scan_done: bool (as u8)
+/// _scan_error: *mut Object (NSError or nil)
+#[cfg(target_os = "macos")]
+fn device_delegate_class() -> &'static Class {
+    REGISTER_DEVICE_DELEGATE.call_once(|| {
+        let superclass = Class::get("NSObject").unwrap();
+        let mut decl = ClassDecl::new("PhotonICDeviceDelegate", superclass).unwrap();
+
+        decl.add_ivar::<u8>("_session_open");
+        decl.add_ivar::<u8>("_scan_done");
+        decl.add_ivar::<*mut Object>("_scan_error");
+
+        unsafe {
+            // ICDeviceDelegate
+            decl.add_method(
+                sel!(device:didOpenSessionWithError:),
+                device_did_open_session
+                    as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+            );
+            decl.add_method(
+                sel!(device:didCloseSessionWithError:),
+                device_did_close_session
+                    as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+            );
+            decl.add_method(
+                sel!(didRemoveDevice:),
+                device_did_remove
+                    as extern "C" fn(&mut Object, Sel, *mut Object),
+            );
+            decl.add_method(
+                sel!(device:didReceiveStatusInformation:),
+                device_did_receive_status
+                    as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+            );
+
+            // ICScannerDeviceDelegate
+            decl.add_method(
+                sel!(scannerDevice:didScanToURL:),
+                scanner_did_scan_to_url
+                    as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+            );
+            decl.add_method(
+                sel!(scannerDevice:didCompleteScanWithError:),
+                scanner_did_complete_scan
+                    as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+            );
+            decl.add_method(
+                sel!(scannerDevice:didScanToBandData:),
+                scanner_did_scan_to_band
+                    as extern "C" fn(&mut Object, Sel, *mut Object, *mut Object),
+            );
+        }
+
+        decl.register();
+    });
+    Class::get("PhotonICDeviceDelegate").unwrap()
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn device_did_open_session(
+    this: &mut Object,
+    _sel: Sel,
+    _device: *mut Object,
+    error: *mut Object,
+) {
+    unsafe {
+        if error.is_null() {
+            this.set_ivar::<u8>("_session_open", 1);
+            log::info!("[ICA] Session opened successfully");
+        } else {
+            let desc: *mut Object = msg_send![error, localizedDescription];
+            log::error!("[ICA] Session open error: {}", nsstring_to_string(desc));
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn device_did_close_session(
+    _this: &mut Object,
+    _sel: Sel,
+    _device: *mut Object,
+    _error: *mut Object,
+) {
+    log::info!("[ICA] Session closed");
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn device_did_remove(
+    _this: &mut Object,
+    _sel: Sel,
+    _device: *mut Object,
+) {
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn device_did_receive_status(
+    _this: &mut Object,
+    _sel: Sel,
+    _device: *mut Object,
+    _status: *mut Object,
+) {
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn scanner_did_scan_to_url(
+    this: &mut Object,
+    _sel: Sel,
+    _device: *mut Object,
+    url: *mut Object,
+) {
+    unsafe {
+        let path: *mut Object = msg_send![url, path];
+        log::info!("[ICA] Scanned to: {}", nsstring_to_string(path));
+        this.set_ivar::<u8>("_scan_done", 1);
+    }
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn scanner_did_complete_scan(
+    this: &mut Object,
+    _sel: Sel,
+    _device: *mut Object,
+    error: *mut Object,
+) {
+    unsafe {
+        this.set_ivar::<u8>("_scan_done", 1);
+        if !error.is_null() {
+            let desc: *mut Object = msg_send![error, localizedDescription];
+            log::error!("[ICA] Scan error: {}", nsstring_to_string(desc));
+            this.set_ivar::<*mut Object>("_scan_error", error);
+        } else {
+            log::info!("[ICA] Scan completed successfully");
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn scanner_did_scan_to_band(
+    _this: &mut Object,
+    _sel: Sel,
+    _device: *mut Object,
+    _data: *mut Object,
 ) {
 }
 
@@ -194,22 +346,16 @@ fn discover_devices_main_thread(timeout_secs: u64) -> Result<Vec<ScannerDevice>,
             ));
         }
 
-        // Create delegate with backing storage
         let mut devices_vec: Box<Vec<*mut Object>> = Box::new(Vec::new());
         let devices_ptr = &mut *devices_vec as *mut Vec<*mut Object> as *mut std::ffi::c_void;
 
-        let delegate_cls = delegate_class();
+        let delegate_cls = browser_delegate_class();
         let delegate: *mut Object = msg_send![delegate_cls, alloc];
         let delegate: *mut Object = msg_send![delegate, init];
         (*delegate).set_ivar("_devices_ptr", devices_ptr);
 
         let _: () = msg_send![browser, setDelegate: delegate];
 
-        // ICDeviceTypeMaskScanner       = 0x00000002
-        // ICDeviceLocationTypeMaskLocal = 0x00000100
-        // ICDeviceLocationTypeMaskShared= 0x00000200
-        // ICDeviceLocationTypeMaskBonjour= 0x00000400
-        // ICDeviceLocationTypeMaskBluetooth= 0x00000800
         let mask: u64 = 0x00000002 | 0x00000100 | 0x00000200 | 0x00000400 | 0x00000800;
         let _: () = msg_send![browser, setBrowsedDeviceTypeMask: mask];
         let _: () = msg_send![browser, start];
@@ -224,20 +370,16 @@ fn discover_devices_main_thread(timeout_secs: u64) -> Result<Vec<ScannerDevice>,
             }
         }
 
-        // Track seen UUIDs to deduplicate
         let mut seen_ids = std::collections::HashSet::new();
 
-        // Process delegate-discovered devices
         for (i, &device) in devices_vec.iter().enumerate() {
             if device.is_null() {
                 continue;
             }
 
-            // Use safe property access to avoid crashes on missing selectors
             let name: *mut Object = msg_send![device, name];
             let name = nsstring_to_string(name);
 
-            // UUIDString is available since macOS 10.15
             let uuid_sel = objc::runtime::Sel::register("UUIDString");
             let responds_uuid: BOOL = msg_send![device, respondsToSelector: uuid_sel];
             let id = if responds_uuid == YES {
@@ -253,14 +395,11 @@ fn discover_devices_main_thread(timeout_secs: u64) -> Result<Vec<ScannerDevice>,
                 id
             };
 
-            // Deduplicate by ID
             if seen_ids.contains(&device_id) {
                 let _: () = msg_send![device, release];
                 continue;
             }
             seen_ids.insert(device_id.clone());
-
-            log::debug!("[ICA] Found scanner: '{}' ({})", name, device_id);
 
             result_devices.push(ScannerDevice {
                 id: device_id,
@@ -272,7 +411,6 @@ fn discover_devices_main_thread(timeout_secs: u64) -> Result<Vec<ScannerDevice>,
             let _: () = msg_send![device, release];
         }
 
-        // Cleanup
         (*delegate).set_ivar::<*mut std::ffi::c_void>("_devices_ptr", std::ptr::null_mut());
         let _: () = msg_send![browser, stop];
         let _: () = msg_send![delegate, release];
@@ -298,6 +436,7 @@ fn perform_scan_main_thread(
     options: &ScanOptions,
 ) -> Result<ScanResult, ScannerError> {
     unsafe {
+        // ── Discover device ──
         let browser_class = Class::get("ICDeviceBrowser")
             .ok_or_else(|| ScannerError::SystemError("ICDeviceBrowser non disponible".into()))?;
 
@@ -307,11 +446,11 @@ fn perform_scan_main_thread(
         let mut devices_vec: Box<Vec<*mut Object>> = Box::new(Vec::new());
         let devices_ptr = &mut *devices_vec as *mut Vec<*mut Object> as *mut std::ffi::c_void;
 
-        let delegate_cls = delegate_class();
-        let delegate: *mut Object = msg_send![delegate_cls, alloc];
-        let delegate: *mut Object = msg_send![delegate, init];
-        (*delegate).set_ivar("_devices_ptr", devices_ptr);
-        let _: () = msg_send![browser, setDelegate: delegate];
+        let browser_del_cls = browser_delegate_class();
+        let browser_del: *mut Object = msg_send![browser_del_cls, alloc];
+        let browser_del: *mut Object = msg_send![browser_del, init];
+        (*browser_del).set_ivar("_devices_ptr", devices_ptr);
+        let _: () = msg_send![browser, setDelegate: browser_del];
 
         let mask: u64 = 0x00000002 | 0x00000100 | 0x00000200 | 0x00000400 | 0x00000800;
         let _: () = msg_send![browser, setBrowsedDeviceTypeMask: mask];
@@ -344,68 +483,34 @@ fn perform_scan_main_thread(
         }
 
         if target_device.is_null() {
-            (*delegate).set_ivar::<*mut std::ffi::c_void>("_devices_ptr", std::ptr::null_mut());
-            for &d in devices_vec.iter() {
-                let _: () = msg_send![d, release];
-            }
+            (*browser_del).set_ivar::<*mut std::ffi::c_void>("_devices_ptr", std::ptr::null_mut());
+            for &d in devices_vec.iter() { let _: () = msg_send![d, release]; }
             let _: () = msg_send![browser, stop];
-            let _: () = msg_send![delegate, release];
+            let _: () = msg_send![browser_del, release];
             let _: () = msg_send![browser, release];
             drop(devices_vec);
             return Err(ScannerError::NoDeviceFound);
         }
 
-        // Open device session
-        let _: () = msg_send![target_device, requestOpenSession];
-        run_loop_for(2.0);
+        // ── Set device delegate for scan callbacks ──
+        let dev_del_cls = device_delegate_class();
+        let dev_del: *mut Object = msg_send![dev_del_cls, alloc];
+        let dev_del: *mut Object = msg_send![dev_del, init];
+        (*dev_del).set_ivar::<u8>("_session_open", 0);
+        (*dev_del).set_ivar::<u8>("_scan_done", 0);
+        (*dev_del).set_ivar::<*mut Object>("_scan_error", std::ptr::null_mut());
+        let _: () = msg_send![target_device, setDelegate: dev_del];
 
-        // Get functional unit
-        let fu: *mut Object = msg_send![target_device, selectedFunctionalUnit];
-        if fu.is_null() {
-            let _: () = msg_send![target_device, requestCloseSession];
-            (*delegate).set_ivar::<*mut std::ffi::c_void>("_devices_ptr", std::ptr::null_mut());
-            for &d in devices_vec.iter() {
-                let _: () = msg_send![d, release];
-            }
-            let _: () = msg_send![browser, stop];
-            let _: () = msg_send![delegate, release];
-            let _: () = msg_send![browser, release];
-            drop(devices_vec);
-            return Err(ScannerError::SystemError(
-                "Unité fonctionnelle non disponible".into(),
-            ));
-        }
-
-        // Configure scan
-        let dpi = options.dpi as f64;
-        let _: () = msg_send![fu, setResolution: dpi];
-
-        let (paper_w, paper_h) = paper_dimensions(&options.paper_format);
-        let width_inches = paper_w / 25.4;
-        let height_inches = paper_h / 25.4;
-
-        let scan_area: ((f64, f64), (f64, f64)) = ((0.0, 0.0), (width_inches, height_inches));
-        let _: () = msg_send![fu, setScanArea: scan_area];
-
-        let pixel_data_type: i64 = match color_mode_id(&options.color_mode) {
-            1 => 0,
-            2 => 1,
-            4 => 2,
-            _ => 0,
-        };
-        let _: () = msg_send![fu, setPixelDataType: pixel_data_type];
-
-        let bit_depth: i64 = if pixel_data_type == 2 { 1 } else { 8 };
-        let _: () = msg_send![fu, setBitDepth: bit_depth];
-
-        if options.duplex {
-            let duplex_type: u64 = 1;
-            let _: () = msg_send![fu, setDocumentType: duplex_type];
-        }
-
+        // ── Set downloads directory ──
         let tmp_dir = std::env::temp_dir().join("document-scanner-scans");
         std::fs::create_dir_all(&tmp_dir)
             .map_err(|e| ScannerError::SystemError(format!("Dossier temp: {}", e)))?;
+        // Clean any leftover files
+        if let Ok(entries) = std::fs::read_dir(&tmp_dir) {
+            for entry in entries.flatten() {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
 
         let tmp_path = tmp_dir.to_string_lossy().to_string();
         let tmp_cstr = std::ffi::CString::new(tmp_path.clone()).unwrap();
@@ -414,39 +519,126 @@ fn perform_scan_main_thread(
         let ns_url: *mut Object = msg_send![class!(NSURL), fileURLWithPath: ns_tmp];
         let _: () = msg_send![target_device, setDownloadsDirectory: ns_url];
 
+        // ── Open session ──
+        log::info!("[ICA] Opening session...");
+        let _: () = msg_send![target_device, requestOpenSession];
+
+        // Wait for session to open (delegate sets _session_open = 1)
+        let session_deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while std::time::Instant::now() < session_deadline {
+            run_loop_for(0.5);
+            let open: u8 = *(*dev_del).get_ivar("_session_open");
+            if open != 0 {
+                break;
+            }
+        }
+
+        let session_open: u8 = *(*dev_del).get_ivar("_session_open");
+        if session_open == 0 {
+            log::error!("[ICA] Session did not open within timeout");
+            let _: () = msg_send![target_device, requestCloseSession];
+            (*browser_del).set_ivar::<*mut std::ffi::c_void>("_devices_ptr", std::ptr::null_mut());
+            for &d in devices_vec.iter() { let _: () = msg_send![d, release]; }
+            let _: () = msg_send![browser, stop];
+            let _: () = msg_send![dev_del, release];
+            let _: () = msg_send![browser_del, release];
+            let _: () = msg_send![browser, release];
+            drop(devices_vec);
+            return Err(ScannerError::SystemError(
+                "Impossible d'ouvrir la session avec le scanner".into(),
+            ));
+        }
+
+        // ── Configure scan parameters ──
+        let fu: *mut Object = msg_send![target_device, selectedFunctionalUnit];
+        if !fu.is_null() {
+            let dpi = options.dpi as f64;
+            let _: () = msg_send![fu, setResolution: dpi];
+
+            let (paper_w, paper_h) = paper_dimensions(&options.paper_format);
+            let width_inches = paper_w / 25.4;
+            let height_inches = paper_h / 25.4;
+            let scan_area: ((f64, f64), (f64, f64)) = ((0.0, 0.0), (width_inches, height_inches));
+            let _: () = msg_send![fu, setScanArea: scan_area];
+
+            let pixel_data_type: i64 = match color_mode_id(&options.color_mode) {
+                1 => 0,
+                2 => 1,
+                4 => 2,
+                _ => 0,
+            };
+            let _: () = msg_send![fu, setPixelDataType: pixel_data_type];
+
+            let bit_depth: i64 = if pixel_data_type == 2 { 1 } else { 8 };
+            let _: () = msg_send![fu, setBitDepth: bit_depth];
+
+            if options.duplex {
+                let duplex_type: u64 = 1;
+                let _: () = msg_send![fu, setDocumentType: duplex_type];
+            }
+
+            log::info!("[ICA] Scan configured: {}dpi, area={}x{} in", dpi, width_inches, height_inches);
+        } else {
+            log::warn!("[ICA] No functional unit available, scanning with defaults");
+        }
+
+        // ── Start scan ──
+        log::info!("[ICA] Requesting scan...");
         let _: () = msg_send![target_device, requestScan];
 
-        let scan_timeout = Duration::from_secs(60);
+        // ── Wait for scan completion ──
+        let scan_timeout = Duration::from_secs(120);
         let start = std::time::Instant::now();
 
         let result = loop {
             if start.elapsed() >= scan_timeout {
+                log::error!("[ICA] Scan timed out after 120s");
                 break Err(ScannerError::SystemError(
                     "Délai de numérisation dépassé".into(),
                 ));
             }
 
-            run_loop_for(0.5);
+            run_loop_for(1.0);
 
+            // Check if delegate received scan completion
+            let scan_done: u8 = *(*dev_del).get_ivar("_scan_done");
+            let scan_error: *mut Object = *(*dev_del).get_ivar("_scan_error");
+
+            if scan_done != 0 && !scan_error.is_null() {
+                let desc: *mut Object = msg_send![scan_error, localizedDescription];
+                let err_str = nsstring_to_string(desc);
+                log::error!("[ICA] Scan failed: {}", err_str);
+                break Err(ScannerError::SystemError(format!("Erreur scan: {}", err_str)));
+            }
+
+            // Check for output files
             if let Ok(entries) = std::fs::read_dir(&tmp_dir) {
                 let files: Vec<_> = entries
                     .filter_map(|e| e.ok())
                     .filter(|e| {
-                        e.path().extension().map_or(false, |ext| {
-                            ext == "tiff"
-                                || ext == "tif"
-                                || ext == "jpeg"
-                                || ext == "jpg"
-                                || ext == "png"
+                        let p = e.path();
+                        p.extension().map_or(false, |ext| {
+                            let ext = ext.to_string_lossy().to_lowercase();
+                            ext == "tiff" || ext == "tif" || ext == "jpeg"
+                                || ext == "jpg" || ext == "png" || ext == "pdf"
                         })
                     })
                     .collect();
 
                 if let Some(entry) = files.last() {
                     let file_path = entry.path();
+                    log::info!("[ICA] Found scan output: {:?}", file_path);
+
+                    // Wait a moment for the file to finish writing
+                    run_loop_for(0.5);
+
                     if let Ok(data) = std::fs::read(&file_path) {
+                        if data.is_empty() {
+                            continue; // File still being written
+                        }
+
                         let img = ::image::load_from_memory(&data).map_err(|e| {
-                            ScannerError::SystemError(format!("Décodage: {}", e))
+                            ScannerError::SystemError(format!("Décodage image: {}", e))
                         })?;
 
                         let width = img.width();
@@ -469,16 +661,25 @@ fn perform_scan_main_thread(
                     }
                 }
             }
+
+            // If scan is done but no file found, report error
+            if scan_done != 0 {
+                log::error!("[ICA] Scan completed but no output file found");
+                break Err(ScannerError::SystemError(
+                    "Numérisation terminée mais aucun fichier généré".into(),
+                ));
+            }
         };
 
-        // Cleanup
+        // ── Cleanup ──
         let _: () = msg_send![target_device, requestCloseSession];
-        (*delegate).set_ivar::<*mut std::ffi::c_void>("_devices_ptr", std::ptr::null_mut());
-        for &d in devices_vec.iter() {
-            let _: () = msg_send![d, release];
-        }
+        run_loop_for(1.0);
+
+        (*browser_del).set_ivar::<*mut std::ffi::c_void>("_devices_ptr", std::ptr::null_mut());
+        for &d in devices_vec.iter() { let _: () = msg_send![d, release]; }
         let _: () = msg_send![browser, stop];
-        let _: () = msg_send![delegate, release];
+        let _: () = msg_send![dev_del, release];
+        let _: () = msg_send![browser_del, release];
         let _: () = msg_send![browser, release];
         drop(devices_vec);
 
