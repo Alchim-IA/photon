@@ -122,7 +122,7 @@ impl ScannerBackend for WiaBackend {
                 let dev_mgr: IWiaDevMgr2 = CoCreateInstance(&WiaDevMgr2, None, CLSCTX_LOCAL_SERVER)
                     .map_err(|e| ScannerError::SystemError(format!("Impossible de créer WIA Device Manager: {}", e)))?;
 
-                let enumerator = dev_mgr.EnumDeviceInfo(WIA_DEVINFO_ENUM_LOCAL.0 as i32)
+                let enumerator = dev_mgr.EnumDeviceInfo(WIA_DEVINFO_ENUM_LOCAL as i32)
                     .map_err(|e| ScannerError::SystemError(format!("Erreur énumération: {}", e)))?;
 
                 let mut devices = Vec::new();
