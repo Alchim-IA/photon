@@ -62,16 +62,14 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install tesseract:x64-windows-static-md
-        env:
-          VCPKG_ROOT: ""
 
       - run: npm ci
 
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VCPKG_ROOT: ${{ runner.os == 'Windows' && env.VCPKG_INSTALLATION_ROOT || '' }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Photon ${{ github.ref_name }}
