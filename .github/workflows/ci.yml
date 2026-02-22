@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: write
@@ -76,6 +76,14 @@ jobs:
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: brew install tesseract leptonica
+
+      - name: Cache vcpkg packages
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:/vcpkg/installed
+          key: vcpkg-windows-tesseract-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: vcpkg-windows-tesseract-
 
       - name: Install Windows dependencies (vcpkg)
         if: runner.os == 'Windows'
