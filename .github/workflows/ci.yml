@@ -79,18 +79,22 @@ jobs:
 
       - name: Cache vcpkg packages
         if: runner.os == 'Windows'
+        id: vcpkg-cache
         uses: actions/cache@v4
         with:
           path: C:/vcpkg/installed
-          key: vcpkg-windows-tesseract-${{ hashFiles('.github/workflows/ci.yml') }}
-          restore-keys: vcpkg-windows-tesseract-
+          key: vcpkg-windows-tesseract-v1
 
       - name: Install Windows dependencies (vcpkg)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install tesseract:x64-windows-static-md
+          if ("${{ steps.vcpkg-cache.outputs.cache-hit }}" -ne "true") {
+            & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install tesseract:x64-windows-static-md
+          } else {
+            Write-Host "Using cached vcpkg packages"
+          }
 
       - run: npm ci
 
