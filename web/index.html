@@ -1,22 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Photon — Smart Document Scanner</title>
-  <meta name="description" content="Photon is a modern, AI-powered document scanner for macOS and Windows. Glassmorphism UI, OCR, vault, automation rules, and more." />
-  <link rel="icon" type="image/png" href="../src-tauri/icons/32x32.png" />
+  <title>Photon — Scanner intelligent</title>
+  <meta name="description" content="Photon est un scanner de documents moderne avec IA, OCR, coffre-fort chiffre et une interface glassmorphism." />
+  <link rel="icon" type="image/png" href="favicon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <style>
-    /* ============================================
-       PHOTON SHOWCASE — Glassmorphism Landing
-       ============================================ */
-
-    *, *::before, *::after {
-      margin: 0; padding: 0; box-sizing: border-box;
-    }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
     :root {
       --bg-deep: #080c18;
@@ -42,621 +36,164 @@
       --shadow-lg: 0 8px 32px rgba(0,0,0,0.45);
       --shadow-xl: 0 16px 48px rgba(0,0,0,0.5);
       --shadow-glow: 0 0 24px var(--accent-glow);
-      --r-sm: 8px;
-      --r-md: 12px;
-      --r-lg: 16px;
-      --r-xl: 20px;
-      --r-2xl: 24px;
+      --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px; --r-2xl: 24px;
       --ease-out: cubic-bezier(0.16,1,0.3,1);
       --ease-spring: cubic-bezier(0.34,1.56,0.64,1);
-      --dur-fast: 150ms;
-      --dur-normal: 250ms;
-      --dur-slow: 400ms;
-      --dur-gentle: 600ms;
-      --blur-sm: 8px;
-      --blur-md: 16px;
-      --blur-lg: 24px;
-      --blur-xl: 40px;
+      --dur-fast: 150ms; --dur-normal: 250ms; --dur-slow: 400ms; --dur-gentle: 600ms;
+      --blur-sm: 8px; --blur-md: 16px; --blur-lg: 24px; --blur-xl: 40px;
       font-family: 'Outfit', sans-serif;
-      font-size: 16px;
-      line-height: 1.6;
+      font-size: 16px; line-height: 1.6;
       -webkit-font-smoothing: antialiased;
       color: var(--text-1);
     }
 
-    body {
-      background: var(--bg-deep);
-      overflow-x: hidden;
-      min-height: 100vh;
-    }
+    body { background: var(--bg-deep); overflow-x: hidden; min-height: 100vh; }
 
-    /* === SCROLLBAR === */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--glass-border-3); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
 
-    /* === ANIMATED BACKGROUND === */
-    .bg-orbs {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      overflow: hidden;
-      pointer-events: none;
-    }
-    .bg-orbs .orb {
-      position: absolute;
-      border-radius: 50%;
-      filter: blur(80px);
-      animation: orb-float 20s ease-in-out infinite;
-    }
-    .bg-orbs .orb:nth-child(1) {
-      width: 600px; height: 600px;
-      background: rgba(34,211,167,0.15);
-      top: -10%; left: -5%;
-      animation-delay: 0s;
-    }
-    .bg-orbs .orb:nth-child(2) {
-      width: 500px; height: 500px;
-      background: rgba(129,140,248,0.18);
-      top: 30%; right: -10%;
-      animation-delay: -7s;
-      animation-duration: 25s;
-    }
-    .bg-orbs .orb:nth-child(3) {
-      width: 400px; height: 400px;
-      background: rgba(244,114,182,0.12);
-      bottom: -5%; left: 30%;
-      animation-delay: -14s;
-      animation-duration: 22s;
-    }
-    .bg-orbs .orb:nth-child(4) {
-      width: 300px; height: 300px;
-      background: rgba(34,211,167,0.08);
-      top: 60%; left: 10%;
-      animation-delay: -5s;
-      animation-duration: 28s;
-    }
+    .bg-orbs { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+    .bg-orbs .orb { position: absolute; border-radius: 50%; filter: blur(80px); animation: orb-float 20s ease-in-out infinite; }
+    .bg-orbs .orb:nth-child(1) { width: 600px; height: 600px; background: rgba(34,211,167,0.15); top: -10%; left: -5%; }
+    .bg-orbs .orb:nth-child(2) { width: 500px; height: 500px; background: rgba(129,140,248,0.18); top: 30%; right: -10%; animation-delay: -7s; animation-duration: 25s; }
+    .bg-orbs .orb:nth-child(3) { width: 400px; height: 400px; background: rgba(244,114,182,0.12); bottom: -5%; left: 30%; animation-delay: -14s; animation-duration: 22s; }
+    .bg-orbs .orb:nth-child(4) { width: 300px; height: 300px; background: rgba(34,211,167,0.08); top: 60%; left: 10%; animation-delay: -5s; animation-duration: 28s; }
     @keyframes orb-float {
-      0%, 100% { transform: translate(0, 0) scale(1); }
-      25% { transform: translate(60px, -40px) scale(1.1); }
-      50% { transform: translate(-30px, 60px) scale(0.95); }
-      75% { transform: translate(40px, 20px) scale(1.05); }
+      0%, 100% { transform: translate(0,0) scale(1); }
+      25% { transform: translate(60px,-40px) scale(1.1); }
+      50% { transform: translate(-30px,60px) scale(0.95); }
+      75% { transform: translate(40px,20px) scale(1.05); }
     }
-
-    /* === MESH GRID OVERLAY === */
     .mesh-grid {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
       background-size: 60px 60px;
       mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 20%, transparent 70%);
     }
 
-    /* === NAV === */
     nav {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 100;
-      padding: 16px 40px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: var(--glass-1);
-      backdrop-filter: blur(var(--blur-lg));
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      padding: 16px 40px; display: flex; align-items: center; justify-content: space-between;
+      background: var(--glass-1); backdrop-filter: blur(var(--blur-lg));
       border-bottom: 1px solid var(--glass-border-1);
       transition: background var(--dur-slow) var(--ease-out);
     }
-    nav.scrolled {
-      background: var(--glass-3);
-    }
-    .nav-brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      text-decoration: none;
-    }
-    .nav-brand img {
-      width: 36px; height: 36px;
-      filter: drop-shadow(0 0 8px var(--accent-glow));
-    }
-    .nav-brand span {
-      font-size: 1.4rem;
-      font-weight: 700;
-      color: var(--accent);
-      letter-spacing: -0.5px;
-    }
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 32px;
-      list-style: none;
-    }
-    .nav-links a {
-      color: var(--text-2);
-      text-decoration: none;
-      font-weight: 500;
-      font-size: 0.95rem;
-      transition: color var(--dur-fast);
-      position: relative;
-    }
-    .nav-links a::after {
-      content: '';
-      position: absolute;
-      bottom: -4px; left: 0;
-      width: 0; height: 2px;
-      background: var(--accent);
-      border-radius: 1px;
-      transition: width var(--dur-normal) var(--ease-out);
-    }
+    nav.scrolled { background: var(--glass-3); }
+    .nav-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+    .nav-brand img { width: 36px; height: 36px; filter: drop-shadow(0 0 8px var(--accent-glow)); }
+    .nav-brand span { font-size: 1.4rem; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+    .nav-right { display: flex; align-items: center; gap: 24px; }
+    .nav-links { display: flex; align-items: center; gap: 32px; list-style: none; }
+    .nav-links a { color: var(--text-2); text-decoration: none; font-weight: 500; font-size: 0.95rem; transition: color var(--dur-fast); position: relative; }
+    .nav-links a::after { content: ''; position: absolute; bottom: -4px; left: 0; width: 0; height: 2px; background: var(--accent); border-radius: 1px; transition: width var(--dur-normal) var(--ease-out); }
     .nav-links a:hover { color: var(--text-1); }
     .nav-links a:hover::after { width: 100%; }
-    .nav-cta {
-      padding: 10px 24px;
-      background: var(--accent);
-      color: #080c18;
-      border: none;
-      border-radius: var(--r-md);
-      font-weight: 600;
-      font-size: 0.95rem;
-      cursor: pointer;
-      transition: all var(--dur-normal) var(--ease-out);
-      text-decoration: none;
-      box-shadow: var(--shadow-glow);
-    }
-    .nav-cta:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 0 36px var(--accent-glow), var(--shadow-md);
-    }
 
-    /* === HERO === */
+    .lang-switcher {
+      display: flex; gap: 4px;
+      background: var(--glass-2); border: 1px solid var(--glass-border-1);
+      border-radius: 100px; padding: 3px; backdrop-filter: blur(var(--blur-sm));
+    }
+    .lang-btn {
+      padding: 6px 14px; border: none; border-radius: 100px;
+      background: transparent; color: var(--text-2); font-weight: 600; font-size: 0.85rem;
+      cursor: pointer; transition: all var(--dur-fast) var(--ease-out); font-family: inherit;
+    }
+    .lang-btn.active { background: var(--accent); color: #080c18; }
+    .lang-btn:not(.active):hover { color: var(--text-1); background: var(--glass-3); }
+
+    .nav-cta {
+      padding: 10px 24px; background: var(--accent); color: #080c18; border: none; border-radius: var(--r-md);
+      font-weight: 600; font-size: 0.95rem; cursor: pointer; transition: all var(--dur-normal) var(--ease-out);
+      text-decoration: none; box-shadow: var(--shadow-glow);
+    }
+    .nav-cta:hover { transform: translateY(-2px); box-shadow: 0 0 36px var(--accent-glow), var(--shadow-md); }
+
     .hero {
-      position: relative;
-      z-index: 1;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 120px 24px 80px;
+      position: relative; z-index: 1; min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 120px 24px 80px;
     }
     .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 20px;
-      background: var(--glass-2);
-      border: 1px solid var(--glass-border-2);
-      border-radius: 100px;
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: var(--accent-light);
-      margin-bottom: 32px;
-      backdrop-filter: blur(var(--blur-sm));
-      animation: fade-up 0.8s var(--ease-out) both;
+      display: inline-flex; align-items: center; gap: 8px; padding: 8px 20px;
+      background: var(--glass-2); border: 1px solid var(--glass-border-2); border-radius: 100px;
+      font-size: 0.85rem; font-weight: 500; color: var(--accent-light); margin-bottom: 32px;
+      backdrop-filter: blur(var(--blur-sm)); animation: fade-up 0.8s var(--ease-out) both;
     }
-    .hero-badge .dot {
-      width: 8px; height: 8px;
-      background: var(--accent);
-      border-radius: 50%;
-      animation: pulse-dot 2s ease-in-out infinite;
-    }
-    @keyframes pulse-dot {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(0.8); }
-    }
-    .hero h1 {
-      font-size: clamp(3rem, 7vw, 5.5rem);
-      font-weight: 800;
-      letter-spacing: -2px;
-      line-height: 1.05;
-      margin-bottom: 24px;
-      animation: fade-up 0.8s var(--ease-out) 0.1s both;
-    }
-    .hero h1 .gradient {
-      background: linear-gradient(135deg, var(--accent), var(--accent-2), var(--accent-3));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .hero-sub {
-      font-size: 1.25rem;
-      color: var(--text-2);
-      max-width: 600px;
-      margin-bottom: 48px;
-      font-weight: 400;
-      animation: fade-up 0.8s var(--ease-out) 0.2s both;
-    }
-    .hero-actions {
-      display: flex;
-      gap: 16px;
-      animation: fade-up 0.8s var(--ease-out) 0.3s both;
-    }
-    .btn-primary {
-      padding: 14px 36px;
-      background: var(--accent);
-      color: #080c18;
-      border: none;
-      border-radius: var(--r-md);
-      font-weight: 700;
-      font-size: 1.05rem;
-      cursor: pointer;
-      transition: all var(--dur-normal) var(--ease-out);
-      text-decoration: none;
-      box-shadow: var(--shadow-glow);
-      font-family: inherit;
-    }
-    .btn-primary:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 0 48px var(--accent-glow), var(--shadow-lg);
-    }
-    .btn-secondary {
-      padding: 14px 36px;
-      background: var(--glass-2);
-      color: var(--text-1);
-      border: 1px solid var(--glass-border-2);
-      border-radius: var(--r-md);
-      font-weight: 600;
-      font-size: 1.05rem;
-      cursor: pointer;
-      transition: all var(--dur-normal) var(--ease-out);
-      text-decoration: none;
-      backdrop-filter: blur(var(--blur-sm));
-      font-family: inherit;
-    }
-    .btn-secondary:hover {
-      background: var(--glass-3);
-      border-color: var(--glass-border-3);
-      transform: translateY(-2px);
-    }
-    .hero-screenshot {
-      margin-top: 64px;
-      width: 100%;
-      max-width: 1100px;
-      animation: fade-up 1s var(--ease-out) 0.5s both;
-    }
-    .screenshot-frame {
-      position: relative;
-      border-radius: var(--r-2xl);
-      overflow: hidden;
-      border: 1px solid var(--glass-border-2);
-      box-shadow: var(--shadow-xl), 0 0 80px rgba(34,211,167,0.08);
-      background: var(--glass-1);
-      backdrop-filter: blur(var(--blur-md));
-    }
-    .screenshot-frame::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(180deg, transparent 60%, var(--bg-deep) 100%);
-      z-index: 2;
-      pointer-events: none;
-    }
-    .screenshot-frame img {
-      width: 100%;
-      display: block;
-    }
-    .screenshot-glow {
-      position: absolute;
-      bottom: -40px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 60%;
-      height: 120px;
-      background: var(--accent-glow);
-      filter: blur(60px);
-      border-radius: 50%;
-      z-index: -1;
-    }
+    .hero-badge .dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: pulse-dot 2s ease-in-out infinite; }
+    @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.8); } }
+    .hero h1 { font-size: clamp(3rem,7vw,5.5rem); font-weight: 800; letter-spacing: -2px; line-height: 1.05; margin-bottom: 24px; animation: fade-up 0.8s var(--ease-out) 0.1s both; }
+    .hero h1 .gradient { background: linear-gradient(135deg, var(--accent), var(--accent-2), var(--accent-3)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .hero-sub { font-size: 1.25rem; color: var(--text-2); max-width: 600px; margin-bottom: 48px; font-weight: 400; animation: fade-up 0.8s var(--ease-out) 0.2s both; }
+    .hero-actions { display: flex; gap: 16px; animation: fade-up 0.8s var(--ease-out) 0.3s both; }
+    .btn-primary { padding: 14px 36px; background: var(--accent); color: #080c18; border: none; border-radius: var(--r-md); font-weight: 700; font-size: 1.05rem; cursor: pointer; transition: all var(--dur-normal) var(--ease-out); text-decoration: none; box-shadow: var(--shadow-glow); font-family: inherit; }
+    .btn-primary:hover { transform: translateY(-3px); box-shadow: 0 0 48px var(--accent-glow), var(--shadow-lg); }
+    .btn-secondary { padding: 14px 36px; background: var(--glass-2); color: var(--text-1); border: 1px solid var(--glass-border-2); border-radius: var(--r-md); font-weight: 600; font-size: 1.05rem; cursor: pointer; transition: all var(--dur-normal) var(--ease-out); text-decoration: none; backdrop-filter: blur(var(--blur-sm)); font-family: inherit; }
+    .btn-secondary:hover { background: var(--glass-3); border-color: var(--glass-border-3); transform: translateY(-2px); }
+    .hero-screenshot { margin-top: 64px; width: 100%; max-width: 1100px; animation: fade-up 1s var(--ease-out) 0.5s both; }
+    .screenshot-frame { position: relative; border-radius: var(--r-2xl); overflow: hidden; border: 1px solid var(--glass-border-2); box-shadow: var(--shadow-xl), 0 0 80px rgba(34,211,167,0.08); background: var(--glass-1); backdrop-filter: blur(var(--blur-md)); }
+    .screenshot-frame::before { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 60%, var(--bg-deep) 100%); z-index: 2; pointer-events: none; }
+    .screenshot-frame img { width: 100%; display: block; }
+    .screenshot-glow { position: absolute; bottom: -40px; left: 50%; transform: translateX(-50%); width: 60%; height: 120px; background: var(--accent-glow); filter: blur(60px); border-radius: 50%; z-index: -1; }
 
-    /* === SECTIONS === */
-    section {
-      position: relative;
-      z-index: 1;
-      padding: 120px 24px;
-    }
-    .section-inner {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-    .section-label {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--accent);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      margin-bottom: 16px;
-    }
-    .section-label::before {
-      content: '';
-      width: 24px; height: 2px;
-      background: var(--accent);
-      border-radius: 1px;
-    }
-    .section-title {
-      font-size: clamp(2rem, 4vw, 3rem);
-      font-weight: 700;
-      letter-spacing: -1px;
-      margin-bottom: 16px;
-    }
-    .section-desc {
-      font-size: 1.1rem;
-      color: var(--text-2);
-      max-width: 600px;
-      margin-bottom: 64px;
-    }
+    section { position: relative; z-index: 1; padding: 120px 24px; }
+    .section-inner { max-width: 1200px; margin: 0 auto; }
+    .section-label { display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 16px; }
+    .section-label::before { content: ''; width: 24px; height: 2px; background: var(--accent); border-radius: 1px; }
+    .section-title { font-size: clamp(2rem,4vw,3rem); font-weight: 700; letter-spacing: -1px; margin-bottom: 16px; }
+    .section-desc { font-size: 1.1rem; color: var(--text-2); max-width: 600px; margin-bottom: 64px; }
 
-    /* === FEATURES GRID === */
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 24px;
-    }
-    .feature-card {
-      position: relative;
-      padding: 36px 32px;
-      background: var(--glass-1);
-      border: 1px solid var(--glass-border-1);
-      border-radius: var(--r-xl);
-      backdrop-filter: blur(var(--blur-md));
-      transition: all var(--dur-normal) var(--ease-out);
-      overflow: hidden;
-    }
-    .feature-card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      opacity: 0;
-      transition: opacity var(--dur-normal);
-    }
-    .feature-card:hover {
-      background: var(--glass-2);
-      border-color: var(--glass-border-2);
-      transform: translateY(-4px);
-      box-shadow: var(--shadow-lg), 0 0 40px rgba(34,211,167,0.04);
-    }
-    .feature-card:hover::before {
-      opacity: 1;
-    }
-    .feature-icon {
-      width: 48px; height: 48px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: var(--r-md);
-      margin-bottom: 20px;
-      font-size: 1.5rem;
-    }
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; }
+    .feature-card { position: relative; padding: 36px 32px; background: var(--glass-1); border: 1px solid var(--glass-border-1); border-radius: var(--r-xl); backdrop-filter: blur(var(--blur-md)); transition: all var(--dur-normal) var(--ease-out); overflow: hidden; }
+    .feature-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: 0; transition: opacity var(--dur-normal); }
+    .feature-card:hover { background: var(--glass-2); border-color: var(--glass-border-2); transform: translateY(-4px); box-shadow: var(--shadow-lg), 0 0 40px rgba(34,211,167,0.04); }
+    .feature-card:hover::before { opacity: 1; }
+    .feature-icon { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border-radius: var(--r-md); margin-bottom: 20px; }
     .feature-icon.teal { background: rgba(34,211,167,0.12); color: var(--accent); }
     .feature-icon.indigo { background: rgba(129,140,248,0.12); color: var(--accent-2); }
     .feature-icon.pink { background: rgba(244,114,182,0.12); color: var(--accent-3); }
-    .feature-card h3 {
-      font-size: 1.15rem;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-    .feature-card p {
-      font-size: 0.95rem;
-      color: var(--text-2);
-      line-height: 1.6;
-    }
+    .feature-card h3 { font-size: 1.15rem; font-weight: 600; margin-bottom: 8px; }
+    .feature-card p { font-size: 0.95rem; color: var(--text-2); line-height: 1.6; }
 
-    /* === SHOWCASE (app preview) === */
-    .showcase {
-      text-align: center;
-    }
-    .showcase-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-      gap: 32px;
-      margin-top: 48px;
-    }
-    .showcase-item {
-      position: relative;
-      border-radius: var(--r-xl);
-      overflow: hidden;
-      border: 1px solid var(--glass-border-1);
-      background: var(--glass-1);
-      backdrop-filter: blur(var(--blur-sm));
-      transition: all var(--dur-normal) var(--ease-out);
-    }
-    .showcase-item:hover {
-      border-color: var(--glass-border-2);
-      transform: translateY(-6px) scale(1.01);
-      box-shadow: var(--shadow-xl);
-    }
-    .showcase-item img {
-      width: 100%;
-      display: block;
-    }
-    .showcase-item .caption {
-      padding: 20px 24px;
-      text-align: left;
-    }
-    .showcase-item .caption h3 {
-      font-size: 1.05rem;
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-    .showcase-item .caption p {
-      font-size: 0.9rem;
-      color: var(--text-2);
-    }
+    .showcase { text-align: center; }
+    .showcase-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 32px; margin-top: 48px; }
+    .showcase-item { position: relative; border-radius: var(--r-xl); overflow: hidden; border: 1px solid var(--glass-border-1); background: var(--glass-1); backdrop-filter: blur(var(--blur-sm)); transition: all var(--dur-normal) var(--ease-out); }
+    .showcase-item:hover { border-color: var(--glass-border-2); transform: translateY(-6px) scale(1.01); box-shadow: var(--shadow-xl); }
+    .showcase-item img { width: 100%; display: block; }
+    .showcase-item .caption { padding: 20px 24px; text-align: left; }
+    .showcase-item .caption h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 4px; }
+    .showcase-item .caption p { font-size: 0.9rem; color: var(--text-2); }
 
-    /* === STATS === */
-    .stats-bar {
-      display: flex;
-      justify-content: center;
-      gap: 64px;
-      flex-wrap: wrap;
-      padding: 80px 24px;
-      position: relative;
-      z-index: 1;
-    }
-    .stat-item {
-      text-align: center;
-    }
-    .stat-value {
-      font-size: 3rem;
-      font-weight: 800;
-      letter-spacing: -2px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .stat-label {
-      font-size: 0.95rem;
-      color: var(--text-2);
-      margin-top: 4px;
-    }
+    .stats-bar { display: flex; justify-content: center; gap: 64px; flex-wrap: wrap; padding: 80px 24px; position: relative; z-index: 1; }
+    .stat-item { text-align: center; }
+    .stat-value { font-size: 3rem; font-weight: 800; letter-spacing: -2px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .stat-label { font-size: 0.95rem; color: var(--text-2); margin-top: 4px; }
 
-    /* === TECH STACK === */
-    .tech-row {
-      display: flex;
-      justify-content: center;
-      gap: 24px;
-      flex-wrap: wrap;
-    }
-    .tech-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 24px;
-      background: var(--glass-2);
-      border: 1px solid var(--glass-border-1);
-      border-radius: 100px;
-      font-size: 0.9rem;
-      font-weight: 500;
-      color: var(--text-2);
-      backdrop-filter: blur(var(--blur-sm));
-      transition: all var(--dur-normal) var(--ease-out);
-    }
-    .tech-chip:hover {
-      background: var(--glass-3);
-      border-color: var(--glass-border-2);
-      color: var(--text-1);
-      transform: translateY(-2px);
-    }
-    .tech-chip svg {
-      width: 20px; height: 20px;
-    }
+    .tech-row { display: flex; justify-content: center; gap: 24px; flex-wrap: wrap; }
+    .tech-chip { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: var(--glass-2); border: 1px solid var(--glass-border-1); border-radius: 100px; font-size: 0.9rem; font-weight: 500; color: var(--text-2); backdrop-filter: blur(var(--blur-sm)); transition: all var(--dur-normal) var(--ease-out); }
+    .tech-chip:hover { background: var(--glass-3); border-color: var(--glass-border-2); color: var(--text-1); transform: translateY(-2px); }
+    .tech-chip svg { width: 20px; height: 20px; }
 
-    /* === CTA === */
-    .cta-section {
-      text-align: center;
-      padding: 120px 24px;
-    }
-    .cta-card {
-      max-width: 700px;
-      margin: 0 auto;
-      padding: 64px 48px;
-      background: var(--glass-2);
-      border: 1px solid var(--glass-border-2);
-      border-radius: var(--r-2xl);
-      backdrop-filter: blur(var(--blur-lg));
-      position: relative;
-      overflow: hidden;
-    }
-    .cta-card::before {
-      content: '';
-      position: absolute;
-      top: -1px; left: 20%; right: 20%;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), transparent);
-    }
-    .cta-card h2 {
-      font-size: 2.2rem;
-      font-weight: 700;
-      margin-bottom: 16px;
-    }
-    .cta-card p {
-      color: var(--text-2);
-      font-size: 1.1rem;
-      margin-bottom: 36px;
-    }
-    .cta-platforms {
-      display: flex;
-      justify-content: center;
-      gap: 16px;
-      margin-top: 24px;
-      flex-wrap: wrap;
-    }
-    .platform-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 14px 28px;
-      background: var(--glass-3);
-      border: 1px solid var(--glass-border-2);
-      border-radius: var(--r-md);
-      color: var(--text-1);
-      font-weight: 600;
-      font-size: 1rem;
-      cursor: pointer;
-      transition: all var(--dur-normal) var(--ease-out);
-      text-decoration: none;
-      font-family: inherit;
-    }
-    .platform-btn:hover {
-      background: var(--glass-4);
-      border-color: var(--accent);
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-glow);
-    }
-    .platform-btn svg {
-      width: 22px; height: 22px;
-    }
+    .cta-section { text-align: center; padding: 120px 24px; }
+    .cta-card { max-width: 700px; margin: 0 auto; padding: 64px 48px; background: var(--glass-2); border: 1px solid var(--glass-border-2); border-radius: var(--r-2xl); backdrop-filter: blur(var(--blur-lg)); position: relative; overflow: hidden; }
+    .cta-card::before { content: ''; position: absolute; top: -1px; left: 20%; right: 20%; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), transparent); }
+    .cta-card h2 { font-size: 2.2rem; font-weight: 700; margin-bottom: 16px; }
+    .cta-card p { color: var(--text-2); font-size: 1.1rem; margin-bottom: 36px; }
+    .cta-platforms { display: flex; justify-content: center; gap: 16px; margin-top: 24px; flex-wrap: wrap; }
+    .platform-btn { display: inline-flex; align-items: center; gap: 10px; padding: 14px 28px; background: var(--glass-3); border: 1px solid var(--glass-border-2); border-radius: var(--r-md); color: var(--text-1); font-weight: 600; font-size: 1rem; cursor: pointer; transition: all var(--dur-normal) var(--ease-out); text-decoration: none; font-family: inherit; }
+    .platform-btn:hover { background: var(--glass-4); border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow-glow); }
+    .platform-btn svg { width: 22px; height: 22px; }
 
-    /* === FOOTER === */
-    footer {
-      position: relative;
-      z-index: 1;
-      padding: 40px 24px;
-      text-align: center;
-      border-top: 1px solid var(--glass-border-1);
-    }
-    footer p {
-      color: var(--text-3);
-      font-size: 0.9rem;
-    }
-    footer a {
-      color: var(--accent);
-      text-decoration: none;
-    }
+    footer { position: relative; z-index: 1; padding: 40px 24px; text-align: center; border-top: 1px solid var(--glass-border-1); }
+    footer p { color: var(--text-3); font-size: 0.9rem; }
+    footer a { color: var(--accent); text-decoration: none; }
 
-    /* === ANIMATIONS === */
-    @keyframes fade-up {
-      from { opacity: 0; transform: translateY(30px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    .reveal {
-      opacity: 0;
-      transform: translateY(40px);
-      transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out);
-    }
-    .reveal.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    /* stagger children */
-    .reveal-stagger > * {
-      opacity: 0;
-      transform: translateY(30px);
-      transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out);
-    }
+    @keyframes fade-up { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+    .reveal { opacity: 0; transform: translateY(40px); transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out); }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+    .reveal-stagger > * { opacity: 0; transform: translateY(30px); transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out); }
     .reveal-stagger.visible > *:nth-child(1) { transition-delay: 0s; }
     .reveal-stagger.visible > *:nth-child(2) { transition-delay: 0.08s; }
     .reveal-stagger.visible > *:nth-child(3) { transition-delay: 0.16s; }
@@ -666,34 +203,10 @@
     .reveal-stagger.visible > *:nth-child(7) { transition-delay: 0.48s; }
     .reveal-stagger.visible > *:nth-child(8) { transition-delay: 0.56s; }
     .reveal-stagger.visible > *:nth-child(9) { transition-delay: 0.64s; }
-    .reveal-stagger.visible > * {
-      opacity: 0;
-      transform: translateY(30px);
-    }
-    .reveal-stagger.visible > * {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    .reveal-stagger.visible > * { opacity: 1; transform: translateY(0); }
+    .scan-line-anim { position: absolute; left: 5%; right: 5%; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); box-shadow: 0 0 20px var(--accent-glow); animation: scan-sweep 3s ease-in-out infinite; z-index: 3; border-radius: 1px; }
+    @keyframes scan-sweep { 0% { top: 10%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 85%; opacity: 0; } }
 
-    /* floating scan line animation */
-    .scan-line-anim {
-      position: absolute;
-      left: 5%; right: 5%;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      box-shadow: 0 0 20px var(--accent-glow);
-      animation: scan-sweep 3s ease-in-out infinite;
-      z-index: 3;
-      border-radius: 1px;
-    }
-    @keyframes scan-sweep {
-      0%   { top: 10%; opacity: 0; }
-      10%  { opacity: 1; }
-      90%  { opacity: 1; }
-      100% { top: 85%; opacity: 0; }
-    }
-
-    /* === RESPONSIVE === */
     @media (max-width: 768px) {
       nav { padding: 12px 20px; }
       .nav-links { display: none; }
@@ -709,297 +222,352 @@
 </head>
 <body>
 
-  <!-- Background -->
-  <div class="bg-orbs">
-    <div class="orb"></div>
-    <div class="orb"></div>
-    <div class="orb"></div>
-    <div class="orb"></div>
-  </div>
+  <div class="bg-orbs"><div class="orb"></div><div class="orb"></div><div class="orb"></div><div class="orb"></div></div>
   <div class="mesh-grid"></div>
 
-  <!-- Navigation -->
   <nav id="nav">
     <a class="nav-brand" href="#">
-      <img src="../src-tauri/icons/128x128.png" alt="Photon" />
+      <img src="logo.png" alt="Photon" />
       <span>Photon</span>
     </a>
-    <ul class="nav-links">
-      <li><a href="#features">Features</a></li>
-      <li><a href="#showcase">Screenshots</a></li>
-      <li><a href="#tech">Tech</a></li>
-    </ul>
-    <a class="nav-cta" href="#download">Download</a>
+    <div class="nav-right">
+      <ul class="nav-links">
+        <li><a href="#features" data-i18n="nav.features"></a></li>
+        <li><a href="#showcase" data-i18n="nav.screenshots"></a></li>
+        <li><a href="#tech" data-i18n="nav.tech"></a></li>
+      </ul>
+      <div class="lang-switcher">
+        <button class="lang-btn active" data-lang="fr">FR</button>
+        <button class="lang-btn" data-lang="en">EN</button>
+      </div>
+      <a class="nav-cta" href="https://github.com/Alchim-IA/photon/releases/latest" target="_blank" rel="noopener" data-i18n="nav.download"></a>
+    </div>
   </nav>
 
-  <!-- Hero -->
   <section class="hero">
     <div class="hero-badge">
       <span class="dot"></span>
-      Open source &middot; macOS &amp; Windows
+      <span data-i18n="hero.badge"></span>
     </div>
+    <!-- Hero title: two spans toggled by JS, no innerHTML needed -->
     <h1>
-      Scan smarter<br />with <span class="gradient">Photon</span>
+      <span data-i18n="hero.title.line1"></span><br/>
+      <span data-i18n="hero.title.line2"></span> <span class="gradient">Photon</span>
     </h1>
-    <p class="hero-sub">
-      A modern document scanner with AI-powered analysis, OCR, encrypted vault,
-      and a stunning glassmorphism interface. Built with Tauri &amp; Rust.
-    </p>
+    <p class="hero-sub" data-i18n="hero.sub"></p>
     <div class="hero-actions">
-      <a class="btn-primary" href="#download">Download for free</a>
+      <a class="btn-primary" href="https://github.com/Alchim-IA/photon/releases/latest" target="_blank" rel="noopener" data-i18n="hero.download"></a>
       <a class="btn-secondary" href="https://github.com/Alchim-IA/photon" target="_blank" rel="noopener">
-        <!-- GitHub icon -->
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: middle; margin-right: 6px;"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-        View on GitHub
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:6px;"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        <span data-i18n="hero.github"></span>
       </a>
     </div>
-
     <div class="hero-screenshot">
       <div class="screenshot-frame">
         <div class="scan-line-anim"></div>
-        <img src="../screenshots/dark-mode.png" alt="Photon dark mode interface" loading="lazy" />
+        <img src="dark-mode.png" alt="Photon interface" loading="lazy" />
       </div>
       <div class="screenshot-glow"></div>
     </div>
   </section>
 
-  <!-- Stats -->
   <div class="stats-bar reveal">
-    <div class="stat-item">
-      <div class="stat-value" data-target="12">0</div>
-      <div class="stat-label">AI document types</div>
-    </div>
-    <div class="stat-item">
-      <div class="stat-value" data-target="50">0</div>
-      <div class="stat-label">OCR languages</div>
-    </div>
-    <div class="stat-item">
-      <div class="stat-value" data-target="3">0</div>
-      <div class="stat-label">PDF export modes</div>
-    </div>
-    <div class="stat-item">
-      <div class="stat-value">100%</div>
-      <div class="stat-label">Open source</div>
-    </div>
+    <div class="stat-item"><div class="stat-value" data-target="12">0</div><div class="stat-label" data-i18n="stats.types"></div></div>
+    <div class="stat-item"><div class="stat-value" data-target="50">0</div><div class="stat-label" data-i18n="stats.languages"></div></div>
+    <div class="stat-item"><div class="stat-value" data-target="3">0</div><div class="stat-label" data-i18n="stats.modes"></div></div>
+    <div class="stat-item"><div class="stat-value">100%</div><div class="stat-label" data-i18n="stats.opensource"></div></div>
   </div>
 
-  <!-- Features -->
   <section id="features">
     <div class="section-inner">
-      <div class="section-label">Features</div>
-      <h2 class="section-title reveal">Everything you need to digitize</h2>
-      <p class="section-desc reveal">From scanning to AI-powered classification, Photon handles your entire document workflow.</p>
+      <div class="section-label" data-i18n="features.label"></div>
+      <h2 class="section-title reveal" data-i18n="features.title"></h2>
+      <p class="section-desc reveal" data-i18n="features.desc"></p>
 
       <div class="features-grid reveal-stagger">
         <div class="feature-card">
-          <div class="feature-icon teal">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
-          </div>
-          <h3>Smart Scanning</h3>
-          <p>Auto-crop, deskew, denoise, and whiten backgrounds automatically. Supports USB, network (eSCL), and batch scanning.</p>
+          <div class="feature-icon teal"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></div>
+          <h3 data-i18n="features.scan.title"></h3>
+          <p data-i18n="features.scan.desc"></p>
         </div>
-
         <div class="feature-card">
-          <div class="feature-icon indigo">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
-          </div>
-          <h3>OCR Text Recognition</h3>
-          <p>Extract text from any scanned document in 50+ languages. Search your documents by their content.</p>
+          <div class="feature-icon indigo"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg></div>
+          <h3 data-i18n="features.ocr.title"></h3>
+          <p data-i18n="features.ocr.desc"></p>
         </div>
-
         <div class="feature-card">
-          <div class="feature-icon pink">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 0-4 4v4h8V6a4 4 0 0 0-4-4z"/><rect x="3" y="10" width="18" height="12" rx="2"/><circle cx="12" cy="16" r="1"/></svg>
-          </div>
-          <h3>Encrypted Vault</h3>
-          <p>Store sensitive documents in a password-protected vault with AES-256 encryption. Your data stays yours.</p>
+          <div class="feature-icon pink"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 0-4 4v4h8V6a4 4 0 0 0-4-4z"/><rect x="3" y="10" width="18" height="12" rx="2"/><circle cx="12" cy="16" r="1"/></svg></div>
+          <h3 data-i18n="features.vault.title"></h3>
+          <p data-i18n="features.vault.desc"></p>
         </div>
-
         <div class="feature-card">
-          <div class="feature-icon teal">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          </div>
-          <h3>AI Classification</h3>
-          <p>Automatically detect document types: invoices, IDs, contracts, prescriptions and more. Powered by Groq AI.</p>
+          <div class="feature-icon teal"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <h3 data-i18n="features.ai.title"></h3>
+          <p data-i18n="features.ai.desc"></p>
         </div>
-
         <div class="feature-card">
-          <div class="feature-icon indigo">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          </div>
-          <h3>Advanced PDF Export</h3>
-          <p>PDF/A compliance, password encryption, watermarks, digital signatures, and annotations baked right in.</p>
+          <div class="feature-icon indigo"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+          <h3 data-i18n="features.pdf.title"></h3>
+          <p data-i18n="features.pdf.desc"></p>
         </div>
-
         <div class="feature-card">
-          <div class="feature-icon pink">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          </div>
-          <h3>Automation Rules</h3>
-          <p>Create IF/THEN rules to auto-rename, auto-tag, and auto-file documents based on their content or type.</p>
+          <div class="feature-icon pink"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+          <h3 data-i18n="features.rules.title"></h3>
+          <p data-i18n="features.rules.desc"></p>
         </div>
-
         <div class="feature-card">
-          <div class="feature-icon teal">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-          </div>
-          <h3>Table Detection</h3>
-          <p>Automatically detect tables in scanned documents and export them as CSV for spreadsheet use.</p>
+          <div class="feature-icon teal"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg></div>
+          <h3 data-i18n="features.tables.title"></h3>
+          <p data-i18n="features.tables.desc"></p>
         </div>
-
         <div class="feature-card">
-          <div class="feature-icon indigo">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          </div>
-          <h3>Data Redaction</h3>
-          <p>AI detects sensitive data (emails, phone numbers, IDs) and lets you redact them irreversibly before export.</p>
+          <div class="feature-icon indigo"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+          <h3 data-i18n="features.redaction.title"></h3>
+          <p data-i18n="features.redaction.desc"></p>
         </div>
-
         <div class="feature-card">
-          <div class="feature-icon pink">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          </div>
-          <h3>Multi-page Documents</h3>
-          <p>Combine multiple scans into a single PDF with drag-and-drop reordering. Perfect for multi-page contracts.</p>
+          <div class="feature-icon pink"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+          <h3 data-i18n="features.multipage.title"></h3>
+          <p data-i18n="features.multipage.desc"></p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Showcase -->
   <section id="showcase" class="showcase">
     <div class="section-inner">
-      <div class="section-label">Interface</div>
-      <h2 class="section-title reveal">Designed to impress</h2>
-      <p class="section-desc reveal" style="margin-left:auto;margin-right:auto;">
-        Glassmorphism UI with light &amp; dark themes, fluid animations, and pixel-perfect details.
-      </p>
-
+      <div class="section-label" data-i18n="showcase.label"></div>
+      <h2 class="section-title reveal" data-i18n="showcase.title"></h2>
+      <p class="section-desc reveal" style="margin-left:auto;margin-right:auto;" data-i18n="showcase.desc"></p>
       <div class="showcase-grid reveal-stagger">
         <div class="showcase-item">
-          <img src="../screenshots/dark-mode.png" alt="Dark mode" loading="lazy" />
+          <img src="dark-mode.png" alt="Dark mode" loading="lazy" />
           <div class="caption">
-            <h3>Dark Mode</h3>
-            <p>Frosted glass panels with accent glow effects</p>
+            <h3 data-i18n="showcase.dark.title"></h3>
+            <p data-i18n="showcase.dark.desc"></p>
           </div>
         </div>
         <div class="showcase-item">
-          <img src="../screenshots/light-mode.png" alt="Light mode" loading="lazy" />
+          <img src="light-mode.png" alt="Light mode" loading="lazy" />
           <div class="caption">
-            <h3>Light Mode</h3>
-            <p>Clean, bright interface with subtle translucency</p>
+            <h3 data-i18n="showcase.light.title"></h3>
+            <p data-i18n="showcase.light.desc"></p>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Tech -->
   <section id="tech">
     <div class="section-inner" style="text-align:center;">
-      <div class="section-label" style="justify-content:center;">Tech Stack</div>
-      <h2 class="section-title reveal">Built with modern tools</h2>
-      <p class="section-desc reveal" style="margin-left:auto;margin-right:auto;">
-        Native performance with web flexibility. Rust for the backend, React for the UI.
-      </p>
-
+      <div class="section-label" style="justify-content:center;" data-i18n="tech.label"></div>
+      <h2 class="section-title reveal" data-i18n="tech.title"></h2>
+      <p class="section-desc reveal" style="margin-left:auto;margin-right:auto;" data-i18n="tech.desc"></p>
       <div class="tech-row reveal-stagger">
-        <div class="tech-chip">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.687 11.709l-.995-.616a13.559 13.559 0 00-.028-.29l.855-.797a.344.344 0 00-.114-.571l-1.093-.453a8.037 8.037 0 00-.086-.282l.682-.947a.344.344 0 00-.226-.527l-1.163-.256a6.2 6.2 0 00-.14-.261l.49-1.065a.344.344 0 00-.329-.478l-1.197-.044a7.904 7.904 0 00-.19-.228l.286-1.146a.344.344 0 00-.42-.415l-1.193.177c-.076-.064-.153-.127-.232-.187l.073-1.19a.344.344 0 00-.494-.34l-1.148.396c-.084-.05-.169-.1-.256-.145l-.145-1.192a.344.344 0 00-.55-.248l-1.063.603c-.09-.033-.182-.064-.274-.093l-.36-1.145a.344.344 0 00-.586-.146l-.94.786a7.85 7.85 0 00-.289-.04L13.327.286a.344.344 0 00-.6-.04l-.79.944a9.344 9.344 0 00-.292.013l-.742-.937a.344.344 0 00-.593.066l-.568 1.088c-.096.018-.19.038-.284.06L9.006.768a.344.344 0 00-.564.163l-.354 1.15a9.2 9.2 0 00-.267.108l-.94-.674a.344.344 0 00-.516.248l-.135 1.187c-.082.048-.163.097-.243.149L5.05 2.5a.344.344 0 00-.45.32l.087 1.197a7.197 7.197 0 00-.211.191l-1.136-.285a.344.344 0 00-.37.38l.306 1.17c-.059.075-.117.15-.172.228l-1.183-.11a.344.344 0 00-.278.43l.52 1.103c-.044.083-.086.167-.126.252l-1.186.076a.344.344 0 00-.178.467l.718.993a7.932 7.932 0 00-.075.272l-1.142.264a.344.344 0 00-.073.489l.893.842c-.016.09-.03.181-.042.273l-1.053.445a.344.344 0 00.034.494l1.036.652c-.003.094-.005.188-.004.283l-.922.613a.344.344 0 00.138.492l1.14.421c.012.093.025.185.041.277l-.755.764a.344.344 0 00.237.475l1.198.16c.03.088.06.176.094.263l-.56.89a.344.344 0 00.326.444l1.212-.109c.048.08.098.16.15.238l-.343.986a.344.344 0 00.4.4l1.184-.378c.065.069.132.136.2.202l-.114 1.044a.344.344 0 00.462.343l1.113-.636c.079.054.16.105.242.155l.121 1.065a.344.344 0 00.508.273l1.005-.872c.088.036.178.07.268.1l.35 1.04a.344.344 0 00.537.191l.863-1.078c.093.017.187.032.281.044l.567.97a.344.344 0 00.549.1l.693-1.242c.096-.002.192-.007.287-.014l.764.857a.344.344 0 00.542.002l.505-1.364c.094-.022.187-.046.28-.072l.933.706a.344.344 0 00.517-.103l.303-1.433c.087-.043.173-.088.258-.135l1.07.52a.344.344 0 00.476-.2l.09-1.45c.076-.063.15-.128.223-.195l1.168.307a.344.344 0 00.42-.283l-.126-1.412c.06-.08.119-.162.175-.247l1.22.073a.344.344 0 00.35-.351l-.34-1.32c.042-.093.083-.188.12-.284l1.225-.166a.344.344 0 00.267-.405l-.546-1.174c.022-.1.042-.2.06-.3l1.18-.405a.344.344 0 00.175-.443zM12.057 18.834a6.834 6.834 0 110-13.668 6.834 6.834 0 010 13.668z"/></svg>
-          Rust
-        </div>
-        <div class="tech-chip">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-          Tauri v2
-        </div>
-        <div class="tech-chip">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.23 12.004a2.236 2.236 0 0 1-2.235 2.236 2.236 2.236 0 0 1-2.236-2.236 2.236 2.236 0 0 1 2.235-2.236 2.236 2.236 0 0 1 2.236 2.236zm2.648-10.69c-1.346 0-3.107.96-4.888 2.622-1.78-1.653-3.542-2.602-4.887-2.602-.31 0-.592.055-.838.174C4.763 2.2 4.163 4.02 4.49 6.637A15.042 15.042 0 0 0 2 12.004c0 2.057.676 3.81 1.49 5.367-.327 2.616.273 4.437 1.775 5.128.247.12.528.174.838.174 1.345 0 3.107-.96 4.888-2.622 1.78 1.653 3.542 2.602 4.887 2.602.31 0 .592-.055.838-.174 1.503-.692 2.103-2.512 1.775-5.128A15.042 15.042 0 0 0 22 12.004c0-2.057-.676-3.81-1.49-5.367.328-2.616-.272-4.437-1.775-5.128a1.907 1.907 0 0 0-.837-.174zm-.355 2.36c.84 1.247 1.527 2.728 2.008 4.362a15.042 15.042 0 0 0-2.008-1.362c-.24-.83-.54-1.63-.895-2.384.34-.214.65-.43.895-.616zM12 19.268c-.605-.572-1.203-1.216-1.78-1.928a17.148 17.148 0 0 0 3.56 0c-.577.712-1.175 1.356-1.78 1.928zm-3.118-4.024a14.852 14.852 0 0 1-.916-2.066 14.852 14.852 0 0 1 .916-2.066A14.852 14.852 0 0 1 12 9.244c1.093.001 2.138.21 3.118.534a14.852 14.852 0 0 1 .916 2.066 14.852 14.852 0 0 1-.916 2.066A14.852 14.852 0 0 1 12 15.764a14.852 14.852 0 0 1-3.118-.52z"/></svg>
-          React + TypeScript
-        </div>
-        <div class="tech-chip">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0L1.608 6v12L12 24l10.392-6V6L12 0zm-1.073 1.445h.001a10.236 10.236 0 012.145 0L12 2.256l-1.073-.81zM4.01 7.073l7.142-4.124.037.008-.037.008L4.01 7.073zm15.98 0L12.848 2.965l.037-.008-.037-.008 7.142 4.108z"/></svg>
-          Tesseract OCR
-        </div>
-        <div class="tech-chip">
-          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          Groq AI
-        </div>
+        <div class="tech-chip"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.687 11.709l-.995-.616a13.559 13.559 0 00-.028-.29l.855-.797a.344.344 0 00-.114-.571l-1.093-.453a8.037 8.037 0 00-.086-.282l.682-.947a.344.344 0 00-.226-.527l-1.163-.256a6.2 6.2 0 00-.14-.261l.49-1.065a.344.344 0 00-.329-.478l-1.197-.044a7.904 7.904 0 00-.19-.228l.286-1.146a.344.344 0 00-.42-.415l-1.193.177c-.076-.064-.153-.127-.232-.187l.073-1.19a.344.344 0 00-.494-.34l-1.148.396c-.084-.05-.169-.1-.256-.145l-.145-1.192a.344.344 0 00-.55-.248l-1.063.603c-.09-.033-.182-.064-.274-.093l-.36-1.145a.344.344 0 00-.586-.146l-.94.786a7.85 7.85 0 00-.289-.04L13.327.286a.344.344 0 00-.6-.04l-.79.944a9.344 9.344 0 00-.292.013l-.742-.937a.344.344 0 00-.593.066l-.568 1.088c-.096.018-.19.038-.284.06L9.006.768a.344.344 0 00-.564.163l-.354 1.15a9.2 9.2 0 00-.267.108l-.94-.674a.344.344 0 00-.516.248l-.135 1.187c-.082.048-.163.097-.243.149L5.05 2.5a.344.344 0 00-.45.32l.087 1.197a7.197 7.197 0 00-.211.191l-1.136-.285a.344.344 0 00-.37.38l.306 1.17c-.059.075-.117.15-.172.228l-1.183-.11a.344.344 0 00-.278.43l.52 1.103c-.044.083-.086.167-.126.252l-1.186.076a.344.344 0 00-.178.467l.718.993a7.932 7.932 0 00-.075.272l-1.142.264a.344.344 0 00-.073.489l.893.842c-.016.09-.03.181-.042.273l-1.053.445a.344.344 0 00.034.494l1.036.652c-.003.094-.005.188-.004.283l-.922.613a.344.344 0 00.138.492l1.14.421c.012.093.025.185.041.277l-.755.764a.344.344 0 00.237.475l1.198.16c.03.088.06.176.094.263l-.56.89a.344.344 0 00.326.444l1.212-.109c.048.08.098.16.15.238l-.343.986a.344.344 0 00.4.4l1.184-.378c.065.069.132.136.2.202l-.114 1.044a.344.344 0 00.462.343l1.113-.636c.079.054.16.105.242.155l.121 1.065a.344.344 0 00.508.273l1.005-.872c.088.036.178.07.268.1l.35 1.04a.344.344 0 00.537.191l.863-1.078c.093.017.187.032.281.044l.567.97a.344.344 0 00.549.1l.693-1.242c.096-.002.192-.007.287-.014l.764.857a.344.344 0 00.542.002l.505-1.364c.094-.022.187-.046.28-.072l.933.706a.344.344 0 00.517-.103l.303-1.433c.087-.043.173-.088.258-.135l1.07.52a.344.344 0 00.476-.2l.09-1.45c.076-.063.15-.128.223-.195l1.168.307a.344.344 0 00.42-.283l-.126-1.412c.06-.08.119-.162.175-.247l1.22.073a.344.344 0 00.35-.351l-.34-1.32c.042-.093.083-.188.12-.284l1.225-.166a.344.344 0 00.267-.405l-.546-1.174c.022-.1.042-.2.06-.3l1.18-.405a.344.344 0 00.175-.443zM12.057 18.834a6.834 6.834 0 110-13.668 6.834 6.834 0 010 13.668z"/></svg> Rust</div>
+        <div class="tech-chip"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg> Tauri v2</div>
+        <div class="tech-chip"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.23 12.004a2.236 2.236 0 0 1-2.235 2.236 2.236 2.236 0 0 1-2.236-2.236 2.236 2.236 0 0 1 2.235-2.236 2.236 2.236 0 0 1 2.236 2.236z"/></svg> React + TypeScript</div>
+        <div class="tech-chip"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0L1.608 6v12L12 24l10.392-6V6L12 0z"/></svg> Tesseract OCR</div>
+        <div class="tech-chip"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Groq AI</div>
       </div>
     </div>
   </section>
 
-  <!-- CTA -->
   <section id="download" class="cta-section">
     <div class="cta-card reveal">
-      <h2>Ready to scan?</h2>
-      <p>Download Photon for free and start digitizing your documents with style.</p>
-      <a class="btn-primary" href="https://github.com/Alchim-IA/photon/releases" target="_blank" rel="noopener">
-        Download latest release
-      </a>
+      <h2 data-i18n="cta.title"></h2>
+      <p data-i18n="cta.desc"></p>
+      <a class="btn-primary" href="https://github.com/Alchim-IA/photon/releases/latest" target="_blank" rel="noopener" data-i18n="cta.btn"></a>
       <div class="cta-platforms">
-        <a class="platform-btn" href="https://github.com/Alchim-IA/photon/releases" target="_blank" rel="noopener">
+        <a class="platform-btn" href="https://github.com/Alchim-IA/photon/releases/latest" target="_blank" rel="noopener">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-          macOS
+          macOS (.dmg)
         </a>
-        <a class="platform-btn" href="https://github.com/Alchim-IA/photon/releases" target="_blank" rel="noopener">
+        <a class="platform-btn" href="https://github.com/Alchim-IA/photon/releases/latest" target="_blank" rel="noopener">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.45H0m10.949-9.6L24 0v11.4H10.949M0 12.6h9.75v9.45L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
-          Windows
+          Windows (.msi)
+        </a>
+        <a class="platform-btn" href="https://github.com/Alchim-IA/photon/releases/latest" target="_blank" rel="noopener">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12.504 0c-.155 0-.311.004-.466.012C7.831.14 4.25 3.159 3.762 7.04c-.261 2.14.361 4.04 1.587 5.45l-.01.01c-.076.087-.158.168-.246.244-.656.556-1.39.756-2.154.96-.764.206-1.58.427-2.26 1.106C.038 15.482-.165 16.36.138 17.166c.236.63.755 1.1 1.39 1.26.346.087.71.09 1.06.003.248-.062.496-.148.733-.258.395-.184.762-.421 1.107-.7.124-.1.246-.208.367-.32l.002-.001c.058.055.115.112.175.166a8.25 8.25 0 003.25 1.884c1.19.357 2.468.4 3.708.093l.064-.016a7.783 7.783 0 003.465-2.033 7.392 7.392 0 001.888-3.076c.33-1.07.412-2.208.238-3.322-.128-.821-.4-1.604-.798-2.326l.003-.003c.083-.089.164-.181.243-.275.605-.717 1.007-1.567 1.22-2.493.212-.927.222-1.93-.002-2.98C19.73 1.78 17.037.06 14.085.002a8.792 8.792 0 00-.58-.002z"/></svg>
+          Linux (.deb / .rpm)
         </a>
       </div>
     </div>
   </section>
 
-  <!-- Footer -->
   <footer>
-    <p>&copy; 2025 <a href="https://github.com/Alchim-IA" target="_blank" rel="noopener">Alchim-IA</a> &middot; Photon is open source under the MIT License</p>
+    <p>&copy; 2025 <a href="https://github.com/Alchim-IA" target="_blank" rel="noopener">Alchim-IA</a> &middot; <span data-i18n="footer.license"></span></p>
   </footer>
 
   <script>
-    // === Scroll reveal ===
-    const reveals = document.querySelectorAll('.reveal, .reveal-stagger');
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
-        if (e.isIntersecting) {
-          e.target.classList.add('visible');
-        }
+    const T = {
+      fr: {
+        "nav.features": "Fonctionnalit\u00e9s",
+        "nav.screenshots": "Captures",
+        "nav.tech": "Technologies",
+        "nav.download": "T\u00e9l\u00e9charger",
+        "hero.badge": "Open source \u00b7 macOS & Windows",
+        "hero.title.line1": "Scannez plus malin",
+        "hero.title.line2": "avec",
+        "hero.sub": "Un scanner de documents moderne avec analyse IA, OCR, coffre-fort chiffr\u00e9 et une interface glassmorphism. Construit avec Tauri & Rust.",
+        "hero.download": "T\u00e9l\u00e9charger gratuitement",
+        "hero.github": "Voir sur GitHub",
+        "stats.types": "Types de documents IA",
+        "stats.languages": "Langues OCR",
+        "stats.modes": "Modes d\u2019export PDF",
+        "stats.opensource": "Open source",
+        "features.label": "Fonctionnalit\u00e9s",
+        "features.title": "Tout pour num\u00e9riser vos documents",
+        "features.desc": "Du scan \u00e0 la classification IA, Photon g\u00e8re l\u2019ensemble de votre flux documentaire.",
+        "features.scan.title": "Scan intelligent",
+        "features.scan.desc": "Recadrage auto, redressement, d\u00e9bruitage et blanchiment du fond. Supporte USB, r\u00e9seau (eSCL) et num\u00e9risation par lot.",
+        "features.ocr.title": "Reconnaissance de texte (OCR)",
+        "features.ocr.desc": "Extrayez le texte de vos documents dans plus de 50 langues. Recherchez vos documents par leur contenu.",
+        "features.vault.title": "Coffre-fort chiffr\u00e9",
+        "features.vault.desc": "Stockez vos documents sensibles dans un coffre-fort prot\u00e9g\u00e9 par mot de passe avec chiffrement AES-256.",
+        "features.ai.title": "Classification IA",
+        "features.ai.desc": "D\u00e9tection automatique du type : factures, pi\u00e8ces d\u2019identit\u00e9, contrats, ordonnances\u2026 Propuls\u00e9 par Groq AI.",
+        "features.pdf.title": "Export PDF avanc\u00e9",
+        "features.pdf.desc": "Conformit\u00e9 PDF/A, chiffrement par mot de passe, filigranes, signatures num\u00e9riques et annotations.",
+        "features.rules.title": "R\u00e8gles d\u2019automatisation",
+        "features.rules.desc": "Cr\u00e9ez des r\u00e8gles SI/ALORS pour renommer, taguer et classer automatiquement selon le contenu ou le type.",
+        "features.tables.title": "D\u00e9tection de tableaux",
+        "features.tables.desc": "D\u00e9tecte automatiquement les tableaux dans vos scans et exportez-les en CSV pour vos tableurs.",
+        "features.redaction.title": "Caviardage de donn\u00e9es",
+        "features.redaction.desc": "L\u2019IA d\u00e9tecte les donn\u00e9es sensibles (emails, t\u00e9l\u00e9phones, num\u00e9ros) et les masque de fa\u00e7on irr\u00e9versible.",
+        "features.multipage.title": "Documents multi-pages",
+        "features.multipage.desc": "Combinez plusieurs scans en un seul PDF avec r\u00e9ordonnement par glisser-d\u00e9poser. Id\u00e9al pour les contrats.",
+        "showcase.label": "Interface",
+        "showcase.title": "Con\u00e7ue pour impressionner",
+        "showcase.desc": "Interface glassmorphism avec th\u00e8mes clair et sombre, animations fluides et d\u00e9tails pixel-perfect.",
+        "showcase.dark.title": "Mode sombre",
+        "showcase.dark.desc": "Panneaux de verre givr\u00e9 avec effets lumineux d\u2019accent",
+        "showcase.light.title": "Mode clair",
+        "showcase.light.desc": "Interface \u00e9pur\u00e9e et lumineuse avec translucit\u00e9 subtile",
+        "tech.label": "Technologies",
+        "tech.title": "Construit avec des outils modernes",
+        "tech.desc": "Performance native avec la flexibilit\u00e9 du web. Rust pour le backend, React pour l\u2019interface.",
+        "cta.title": "Pr\u00eat \u00e0 scanner ?",
+        "cta.desc": "T\u00e9l\u00e9chargez Photon gratuitement et num\u00e9risez vos documents avec style.",
+        "cta.btn": "T\u00e9l\u00e9charger la derni\u00e8re version",
+        "footer.license": "Photon est open source sous licence MIT",
+        "_title": "Photon \u2014 Scanner intelligent",
+        "_desc": "Photon est un scanner de documents moderne avec IA, OCR, coffre-fort chiffr\u00e9 et une interface glassmorphism."
+      },
+      en: {
+        "nav.features": "Features",
+        "nav.screenshots": "Screenshots",
+        "nav.tech": "Tech",
+        "nav.download": "Download",
+        "hero.badge": "Open source \u00b7 macOS & Windows",
+        "hero.title.line1": "Scan smarter",
+        "hero.title.line2": "with",
+        "hero.sub": "A modern document scanner with AI-powered analysis, OCR, encrypted vault, and a stunning glassmorphism interface. Built with Tauri & Rust.",
+        "hero.download": "Download for free",
+        "hero.github": "View on GitHub",
+        "stats.types": "AI document types",
+        "stats.languages": "OCR languages",
+        "stats.modes": "PDF export modes",
+        "stats.opensource": "Open source",
+        "features.label": "Features",
+        "features.title": "Everything you need to digitize",
+        "features.desc": "From scanning to AI-powered classification, Photon handles your entire document workflow.",
+        "features.scan.title": "Smart Scanning",
+        "features.scan.desc": "Auto-crop, deskew, denoise, and whiten backgrounds automatically. Supports USB, network (eSCL), and batch scanning.",
+        "features.ocr.title": "OCR Text Recognition",
+        "features.ocr.desc": "Extract text from any scanned document in 50+ languages. Search your documents by their content.",
+        "features.vault.title": "Encrypted Vault",
+        "features.vault.desc": "Store sensitive documents in a password-protected vault with AES-256 encryption. Your data stays yours.",
+        "features.ai.title": "AI Classification",
+        "features.ai.desc": "Automatically detect document types: invoices, IDs, contracts, prescriptions and more. Powered by Groq AI.",
+        "features.pdf.title": "Advanced PDF Export",
+        "features.pdf.desc": "PDF/A compliance, password encryption, watermarks, digital signatures, and annotations baked right in.",
+        "features.rules.title": "Automation Rules",
+        "features.rules.desc": "Create IF/THEN rules to auto-rename, auto-tag, and auto-file documents based on their content or type.",
+        "features.tables.title": "Table Detection",
+        "features.tables.desc": "Automatically detect tables in scanned documents and export them as CSV for spreadsheet use.",
+        "features.redaction.title": "Data Redaction",
+        "features.redaction.desc": "AI detects sensitive data (emails, phone numbers, IDs) and lets you redact them irreversibly before export.",
+        "features.multipage.title": "Multi-page Documents",
+        "features.multipage.desc": "Combine multiple scans into a single PDF with drag-and-drop reordering. Perfect for multi-page contracts.",
+        "showcase.label": "Interface",
+        "showcase.title": "Designed to impress",
+        "showcase.desc": "Glassmorphism UI with light & dark themes, fluid animations, and pixel-perfect details.",
+        "showcase.dark.title": "Dark Mode",
+        "showcase.dark.desc": "Frosted glass panels with accent glow effects",
+        "showcase.light.title": "Light Mode",
+        "showcase.light.desc": "Clean, bright interface with subtle translucency",
+        "tech.label": "Tech Stack",
+        "tech.title": "Built with modern tools",
+        "tech.desc": "Native performance with web flexibility. Rust for the backend, React for the UI.",
+        "cta.title": "Ready to scan?",
+        "cta.desc": "Download Photon for free and start digitizing your documents with style.",
+        "cta.btn": "Download latest release",
+        "footer.license": "Photon is open source under the MIT License",
+        "_title": "Photon \u2014 Smart Document Scanner",
+        "_desc": "Photon is a modern, AI-powered document scanner for macOS and Windows. Glassmorphism UI, OCR, vault, automation rules, and more."
+      }
+    };
+
+    let lang = localStorage.getItem('photon-lang') || (navigator.language.startsWith('fr') ? 'fr' : 'en');
+
+    function setLang(l) {
+      lang = l;
+      localStorage.setItem('photon-lang', l);
+      document.documentElement.lang = l;
+      var t = T[l];
+      document.title = t['_title'];
+      document.querySelector('meta[name="description"]').setAttribute('content', t['_desc']);
+      document.querySelectorAll('[data-i18n]').forEach(function(el) {
+        var key = el.getAttribute('data-i18n');
+        if (t[key] != null) el.textContent = t[key];
       });
+      document.querySelectorAll('.lang-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.lang === l);
+      });
+    }
+
+    setLang(lang);
+    document.querySelectorAll('.lang-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() { setLang(btn.dataset.lang); });
+    });
+
+    // Scroll reveal
+    var reveals = document.querySelectorAll('.reveal, .reveal-stagger');
+    var obs = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) { if (e.isIntersecting) e.target.classList.add('visible'); });
     }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
-    reveals.forEach(el => observer.observe(el));
+    reveals.forEach(function(el) { obs.observe(el); });
 
-    // === Nav scroll effect ===
-    const nav = document.getElementById('nav');
-    window.addEventListener('scroll', () => {
-      nav.classList.toggle('scrolled', window.scrollY > 40);
-    }, { passive: true });
+    // Nav scroll
+    var navEl = document.getElementById('nav');
+    window.addEventListener('scroll', function() { navEl.classList.toggle('scrolled', window.scrollY > 40); }, { passive: true });
 
-    // === Counter animation ===
-    const counters = document.querySelectorAll('.stat-value[data-target]');
-    const counterObserver = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
+    // Counter animation
+    var counters = document.querySelectorAll('.stat-value[data-target]');
+    var cObs = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) {
         if (e.isIntersecting) {
-          const el = e.target;
-          const target = parseInt(el.dataset.target);
-          let current = 0;
-          const step = Math.max(1, Math.floor(target / 40));
-          const timer = setInterval(() => {
+          var el = e.target;
+          var target = parseInt(el.dataset.target);
+          var current = 0;
+          var step = Math.max(1, Math.floor(target / 40));
+          var timer = setInterval(function() {
             current += step;
-            if (current >= target) {
-              current = target;
-              clearInterval(timer);
-            }
+            if (current >= target) { current = target; clearInterval(timer); }
             el.textContent = current + '+';
           }, 30);
-          counterObserver.unobserve(el);
+          cObs.unobserve(el);
         }
       });
     }, { threshold: 0.5 });
-    counters.forEach(el => counterObserver.observe(el));
+    counters.forEach(function(el) { cObs.observe(el); });
 
-    // === Smooth scroll for anchor links ===
-    document.querySelectorAll('a[href^="#"]').forEach(a => {
-      a.addEventListener('click', e => {
+    // Smooth scroll
+    document.querySelectorAll('a[href^="#"]').forEach(function(a) {
+      a.addEventListener('click', function(e) {
         e.preventDefault();
-        const target = document.querySelector(a.getAttribute('href'));
+        var target = document.querySelector(a.getAttribute('href'));
         if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
