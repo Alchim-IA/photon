@@ -10,6 +10,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   check-frontend:
     runs-on: ubuntu-latest
@@ -87,4 +90,32 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tagName: v1.0.0
+          releaseName: Photon v1.0.0
+          releaseBody: |
+            ## Photon v1.0.0
+
+            Smart document scanner with AI-powered analysis, OCR, encrypted vault, and a glassmorphism interface.
+
+            ### Features
+            - Smart scanning (USB, eSCL network, batch)
+            - OCR text recognition (50+ languages)
+            - AI document classification (Groq)
+            - Encrypted vault (AES-256)
+            - Advanced PDF export (PDF/A, encryption, watermarks, signatures)
+            - Automation rules
+            - Table detection & CSV export
+            - Sensitive data redaction
+            - Multi-page document support
+            - Light & dark glassmorphism themes
+
+            ### Downloads
+            | Platform | File |
+            |----------|------|
+            | macOS (Apple Silicon) | `.dmg` |
+            | macOS (Intel) | `.dmg` |
+            | Windows | `.msi` / `.exe` |
+            | Linux | `.deb` / `.rpm` / `.AppImage` |
+          releaseDraft: false
+          prerelease: false
           args: --target ${{ matrix.target }}
