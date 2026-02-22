@@ -614,3 +614,14 @@ pub fn evaluate_rules(rules: &[AutomationRule], ctx: &RuleContext) -> Vec<RuleEx
 
     results
 }
+
+/// Returns the pre-compiled sensitive-data regex patterns for redaction.
+/// Each entry is (label, &Regex).
+pub fn get_sensitive_patterns() -> Vec<(&'static str, &'static Regex)> {
+    vec![
+        ("IBAN", &*RE_IBAN),
+        ("Email", &*RE_EMAIL),
+        ("Phone", &*RE_PHONE),
+        ("SIRET", &*RE_SIRET),
+    ]
+}

@@ -31,8 +31,20 @@ log = "0.4"
 tesseract = "0.14"
 regex = "1"
 lopdf = "0.34"
+md5 = "0.7"
 tiff = "0.9"
 pdfium-render = { version = "0.8", default-features = false, features = ["image_025", "pdfium_latest", "thread_safe"] }
+sha2 = "0.10"
+flate2 = "1"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+argon2 = "0.5"
+aes-gcm = "0.10"
+rand = "0.8"
+zeroize = { version = "1", features = ["derive"] }
+whatlang = "0.16"
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "blocking"], default-features = false }
+rxing = "0.6"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

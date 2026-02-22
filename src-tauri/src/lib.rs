@@ -3,6 +3,14 @@ pub mod scanner;
 pub mod processing;
 pub mod storage;
 pub mod intelligence;
+pub mod pdf_postprocess;
+pub mod vault;
+pub mod templates;
+pub mod comparison;
+pub mod pdf_forms;
+pub mod groq;
+pub mod search;
+pub mod tables;
 
 use ocr::OcrResult;
 use processing::{FlipAxis, ImageAdjustments, PageData, RotationAngle};
@@ -29,6 +37,10 @@ struct AppState {
     settings: Mutex<AppSettings>,
     /// Cached OCR results (doc_id -> OcrResult).
     ocr_cache: Mutex<HashMap<String, OcrResult>>,
+    /// Encrypted vault manager.
+    vault_manager: Mutex<vault::VaultManager>,
+    /// Version history stacks (doc_id -> Vec<PNG bytes>), max 20 per doc.
+    version_history: Mutex<HashMap<String, Vec<Vec<u8>>>>,
 }
 
 struct DocumentData {
@@ -87,12 +99,24 @@ struct MultiPageDocDto {
     created_at: String,
 }
 
+// ─── v1.1.0: PDF Save Result ──────────────────────────────────────
+
+#[derive(Serialize)]
+struct PdfSaveResult {
+    path: String,
+    sha256: Option<String>,
+}
+
 // ─── Tauri Commands ───────────────────────────────────────────────
 
 #[tauri::command]
 async fn list_scanners() -> Result<Vec<ScannerDevice>, ScannerError> {
-    let backend = scanner::get_backend();
-    backend.list_devices()
+    tokio::task::spawn_blocking(|| {
+        let backend = scanner::get_backend();
+        backend.list_devices()
+    })
+    .await
+    .map_err(|e| ScannerError::SystemError(format!("Thread join: {}", e)))?
 }
 
 #[tauri::command]
@@ -100,8 +124,13 @@ async fn scan_document(
     options: ScanOptions,
     state: tauri::State<'_, AppState>,
 ) -> Result<ScanResultDto, ScannerError> {
-    let backend = scanner::get_backend();
-    let result = backend.scan(options.clone())?;
+    let opts = options.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let backend = scanner::get_backend();
+        backend.scan(opts)
+    })
+    .await
+    .map_err(|e| ScannerError::SystemError(format!("Thread join: {}", e)))??;
 
     // Apply auto-crop if enabled
     let settings = state.settings.lock().unwrap().clone();
@@ -197,6 +226,16 @@ async fn scan_document(
         ocr_text,
         ocr_lang: ocr_lang_used,
     });
+
+    // Track statistics for scan
+    let _ = (|| -> Result<(), ScannerError> {
+        let mut stats = load_stats();
+        stats.total_scans += 1;
+        stats.total_pages_scanned += 1;
+        let month = chrono::Local::now().format("%Y-%m").to_string();
+        *stats.scans_by_month.entry(month).or_insert(0) += 1;
+        save_stats(&stats)
+    })();
 
     Ok(ScanResultDto {
         id,
@@ -300,6 +339,17 @@ async fn import_file(
             image_base64,
         });
     }
+
+    // Track statistics for import
+    let _ = (|| -> Result<(), ScannerError> {
+        let mut stats = load_stats();
+        stats.total_scans += 1;
+        stats.total_pages_scanned += total as u64;
+        let month = chrono::Local::now().format("%Y-%m").to_string();
+        *stats.scans_by_month.entry(month).or_insert(0) += 1;
+        *stats.formats_used.entry(ext.to_uppercase()).or_insert(0) += 1;
+        save_stats(&stats)
+    })();
 
     Ok(results)
 }
@@ -740,8 +790,10 @@ fn extract_tiff_pages(file_path: &str) -> Result<Vec<Vec<u8>>, ScannerError> {
 async fn save_document_as_pdf(
     doc_id: String,
     output_path: String,
+    export_options: Option<pdf_postprocess::PdfExportOptions>,
+    annotations: Option<Vec<pdf_postprocess::PageAnnotations>>,
     state: tauri::State<'_, AppState>,
-) -> Result<String, ScannerError> {
+) -> Result<PdfSaveResult, ScannerError> {
     let (png_data, dpi) = {
         let docs = state.documents.lock().unwrap();
         let doc = docs
@@ -757,6 +809,13 @@ async fn save_document_as_pdf(
 
     processing::save_as_pdf(&png_data, &output_path, dpi, ocr_result.as_ref())?;
 
+    // Post-processing pipeline
+    let sha256 = pdf_postprocess::postprocess_pdf(
+        &output_path,
+        export_options.as_ref(),
+        annotations.as_deref(),
+    ).map_err(|e| ScannerError::SystemError(e))?;
+
     let mut history = storage::load_history();
     if let Some(entry) = history.iter_mut().find(|h| h.id == doc_id) {
         entry.file_path = Some(output_path.clone());
@@ -764,7 +823,7 @@ async fn save_document_as_pdf(
         let _ = storage::save_history(&history);
     }
 
-    Ok(output_path)
+    Ok(PdfSaveResult { path: output_path, sha256 })
 }
 
 #[tauri::command]
@@ -807,6 +866,8 @@ async fn auto_crop_document(
             .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
         (doc.png_data.clone(), doc.dpi)
     };
+
+    push_version(&doc_id, &png_data, &state);
 
     let cropped = processing::auto_crop(&png_data)?;
 
@@ -1094,6 +1155,8 @@ async fn rotate_document(
         (doc.png_data.clone(), doc.dpi)
     };
 
+    push_version(&doc_id, &png_data, &state);
+
     let angle = match direction.as_str() {
         "90" => RotationAngle::R90,
         "180" => RotationAngle::R180,
@@ -1144,6 +1207,8 @@ async fn flip_document(
             .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
         (doc.png_data.clone(), doc.dpi)
     };
+
+    push_version(&doc_id, &png_data, &state);
 
     let flip_axis = match axis.as_str() {
         "horizontal" => FlipAxis::Horizontal,
@@ -1334,6 +1399,8 @@ async fn denoise_document(
         (doc.png_data.clone(), doc.dpi)
     };
 
+    push_version(&doc_id, &png_data, &state);
+
     let denoised = processing::reduce_noise(&png_data, strength)?;
     let img = ::image::load_from_memory(&denoised)
         .map_err(|e| ScannerError::SystemError(format!("Décodage: {}", e)))?;
@@ -1376,6 +1443,8 @@ async fn deskew_document(
             .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
         (doc.png_data.clone(), doc.dpi)
     };
+
+    push_version(&doc_id, &png_data, &state);
 
     let (corrected, angle) = processing::deskew(&png_data)?;
     let img = ::image::load_from_memory(&corrected)
@@ -1422,6 +1491,8 @@ async fn whiten_document_background(
             .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
         (doc.png_data.clone(), doc.dpi)
     };
+
+    push_version(&doc_id, &png_data, &state);
 
     let whitened = processing::whiten_background(&png_data, threshold)?;
     let img = ::image::load_from_memory(&whitened)
@@ -1598,8 +1669,10 @@ async fn list_multipage_documents(
 async fn save_multipage_as_pdf(
     multipage_id: String,
     output_path: String,
+    export_options: Option<pdf_postprocess::PdfExportOptions>,
+    annotations: Option<Vec<pdf_postprocess::PageAnnotations>>,
     state: tauri::State<'_, AppState>,
-) -> Result<String, ScannerError> {
+) -> Result<PdfSaveResult, ScannerError> {
     let page_ids = {
         let mp_docs = state.multi_page_docs.lock().unwrap();
         let mp = mp_docs
@@ -1644,15 +1717,24 @@ async fn save_multipage_as_pdf(
 
     processing::save_as_pdf_multipage(&pages, &output_path, "Document multi-pages")?;
 
-    Ok(output_path)
+    // Post-processing pipeline
+    let sha256 = pdf_postprocess::postprocess_pdf(
+        &output_path,
+        export_options.as_ref(),
+        annotations.as_deref(),
+    ).map_err(|e| ScannerError::SystemError(e))?;
+
+    Ok(PdfSaveResult { path: output_path, sha256 })
 }
 
 #[tauri::command]
 async fn combine_documents_as_pdf(
     doc_ids: Vec<String>,
     output_path: String,
+    export_options: Option<pdf_postprocess::PdfExportOptions>,
+    annotations: Option<Vec<pdf_postprocess::PageAnnotations>>,
     state: tauri::State<'_, AppState>,
-) -> Result<String, ScannerError> {
+) -> Result<PdfSaveResult, ScannerError> {
     if doc_ids.is_empty() {
         return Err(ScannerError::SystemError("Aucun document à combiner".into()));
     }
@@ -1688,7 +1770,14 @@ async fn combine_documents_as_pdf(
 
     processing::save_as_pdf_multipage(&pages, &output_path, "Document combiné")?;
 
-    Ok(output_path)
+    // Post-processing pipeline
+    let sha256 = pdf_postprocess::postprocess_pdf(
+        &output_path,
+        export_options.as_ref(),
+        annotations.as_deref(),
+    ).map_err(|e| ScannerError::SystemError(e))?;
+
+    Ok(PdfSaveResult { path: output_path, sha256 })
 }
 
 // ─── v0.4.0: Scan Profiles ────────────────────────────────────────
@@ -1726,13 +1815,18 @@ async fn batch_scan(
     page_count: usize,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ScanResultDto>, ScannerError> {
-    let backend = scanner::get_backend();
     let mut results = Vec::new();
 
     let settings = state.settings.lock().unwrap().clone();
 
     for i in 0..page_count {
-        let scan_result = backend.scan(options.clone())?;
+        let opts = options.clone();
+        let scan_result = tokio::task::spawn_blocking(move || {
+            let backend = scanner::get_backend();
+            backend.scan(opts)
+        })
+        .await
+        .map_err(|e| ScannerError::SystemError(format!("Thread join: {}", e)))??;
 
         let final_data = if settings.auto_crop {
             processing::auto_crop(&scan_result.image_data).unwrap_or(scan_result.image_data.clone())
@@ -2206,6 +2300,1093 @@ async fn apply_rule_actions(
     Ok(())
 }
 
+// ─── v1.1.0: Vault Commands ───────────────────────────────────────
+
+#[tauri::command]
+async fn vault_is_setup(
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, ScannerError> {
+    Ok(state.vault_manager.lock().unwrap().is_setup())
+}
+
+#[tauri::command]
+async fn vault_is_unlocked(
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, ScannerError> {
+    Ok(state.vault_manager.lock().unwrap().is_unlocked())
+}
+
+#[tauri::command]
+async fn vault_set_password(
+    password: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), ScannerError> {
+    state.vault_manager.lock().unwrap().set_password(&password)
+}
+
+#[tauri::command]
+async fn vault_unlock(
+    password: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), ScannerError> {
+    state.vault_manager.lock().unwrap().unlock(&password)
+}
+
+#[tauri::command]
+async fn vault_lock(
+    state: tauri::State<'_, AppState>,
+) -> Result<(), ScannerError> {
+    state.vault_manager.lock().unwrap().lock();
+    Ok(())
+}
+
+#[tauri::command]
+async fn vault_add_document(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), ScannerError> {
+    let (png_data, name) = {
+        let docs = state.documents.lock().unwrap();
+        let doc = docs
+            .get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
+        (doc.png_data.clone(), format!("vault_doc_{}", doc_id))
+    };
+
+    // Try to get name from history
+    let history = storage::load_history();
+    let doc_name = history
+        .iter()
+        .find(|h| h.id == doc_id)
+        .map(|h| h.name.clone())
+        .unwrap_or(name);
+
+    state
+        .vault_manager
+        .lock()
+        .unwrap()
+        .add_document(&doc_id, &doc_name, &png_data)
+}
+
+#[tauri::command]
+async fn vault_list_documents(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<vault::VaultDocDto>, ScannerError> {
+    state.vault_manager.lock().unwrap().list_documents()
+}
+
+#[tauri::command]
+async fn vault_open_document(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<ScanResultDto, ScannerError> {
+    let png_data = state
+        .vault_manager
+        .lock()
+        .unwrap()
+        .open_document(&doc_id)?;
+
+    let img = ::image::load_from_memory(&png_data)
+        .map_err(|e| ScannerError::SystemError(format!("Décodage: {}", e)))?;
+    let width = img.width();
+    let height = img.height();
+
+    let new_id = Uuid::new_v4().to_string();
+    let image_base64 = BASE64.encode(&png_data);
+
+    {
+        let mut docs = state.documents.lock().unwrap();
+        docs.insert(
+            new_id.clone(),
+            DocumentData {
+                png_data,
+                original_png_data: None,
+                width,
+                height,
+                dpi: 300,
+            },
+        );
+    }
+
+    let now = Local::now();
+    Ok(ScanResultDto {
+        id: new_id,
+        name: format!("Vault_{}.png", now.format("%H%M%S")),
+        date: now.format("%d/%m/%Y %H:%M").to_string(),
+        width,
+        height,
+        image_base64,
+    })
+}
+
+#[tauri::command]
+async fn vault_remove_document(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), ScannerError> {
+    state
+        .vault_manager
+        .lock()
+        .unwrap()
+        .remove_document(&doc_id)
+}
+
+// ─── v1.2.0: Version History ──────────────────────────────────────
+
+/// Push current state to version history before a destructive operation.
+fn push_version(doc_id: &str, png_data: &[u8], state: &tauri::State<'_, AppState>) {
+    let mut history = state.version_history.lock().unwrap();
+    let stack = history.entry(doc_id.to_string()).or_default();
+    stack.push(png_data.to_vec());
+    if stack.len() > 20 {
+        stack.remove(0); // Keep max 20 versions
+    }
+}
+
+#[derive(Serialize)]
+struct VersionInfo {
+    index: usize,
+    size_bytes: usize,
+}
+
+#[tauri::command]
+async fn get_document_versions(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<VersionInfo>, ScannerError> {
+    let history = state.version_history.lock().unwrap();
+    Ok(history
+        .get(&doc_id)
+        .map(|stack| {
+            stack
+                .iter()
+                .enumerate()
+                .map(|(i, data)| VersionInfo {
+                    index: i,
+                    size_bytes: data.len(),
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+#[tauri::command]
+async fn undo_last_change(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<ScanResultDto, ScannerError> {
+    let png_data = {
+        let mut history = state.version_history.lock().unwrap();
+        let stack = history
+            .get_mut(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("No version history".into()))?;
+        stack
+            .pop()
+            .ok_or_else(|| ScannerError::SystemError("No more versions to undo".into()))?
+    };
+
+    let img = ::image::load_from_memory(&png_data)
+        .map_err(|e| ScannerError::SystemError(format!("Décodage: {}", e)))?;
+    let (width, height) = (img.width(), img.height());
+    let image_base64 = BASE64.encode(&png_data);
+
+    let dpi = {
+        let docs = state.documents.lock().unwrap();
+        docs.get(&doc_id).map(|d| d.dpi).unwrap_or(300)
+    };
+
+    {
+        let mut docs = state.documents.lock().unwrap();
+        docs.insert(
+            doc_id.clone(),
+            DocumentData {
+                png_data,
+                original_png_data: None,
+                width,
+                height,
+                dpi,
+            },
+        );
+    }
+
+    state.ocr_cache.lock().unwrap().remove(&doc_id);
+
+    let now = Local::now();
+    Ok(ScanResultDto {
+        id: doc_id,
+        name: format!("Undo_{}.png", now.format("%H%M%S")),
+        date: now.format("%d/%m/%Y %H:%M").to_string(),
+        width,
+        height,
+        image_base64,
+    })
+}
+
+#[tauri::command]
+async fn rollback_to_version(
+    doc_id: String,
+    version_index: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<ScanResultDto, ScannerError> {
+    let png_data = {
+        let mut history = state.version_history.lock().unwrap();
+        let stack = history
+            .get_mut(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("No version history".into()))?;
+        if version_index >= stack.len() {
+            return Err(ScannerError::SystemError("Invalid version index".into()));
+        }
+        let data = stack[version_index].clone();
+        stack.truncate(version_index);
+        data
+    };
+
+    let img = ::image::load_from_memory(&png_data)
+        .map_err(|e| ScannerError::SystemError(format!("Décodage: {}", e)))?;
+    let (width, height) = (img.width(), img.height());
+    let image_base64 = BASE64.encode(&png_data);
+
+    let dpi = {
+        let docs = state.documents.lock().unwrap();
+        docs.get(&doc_id).map(|d| d.dpi).unwrap_or(300)
+    };
+
+    {
+        let mut docs = state.documents.lock().unwrap();
+        docs.insert(
+            doc_id.clone(),
+            DocumentData {
+                png_data,
+                original_png_data: None,
+                width,
+                height,
+                dpi,
+            },
+        );
+    }
+
+    state.ocr_cache.lock().unwrap().remove(&doc_id);
+
+    let now = Local::now();
+    Ok(ScanResultDto {
+        id: doc_id,
+        name: format!("Rollback_{}.png", now.format("%H%M%S")),
+        date: now.format("%d/%m/%Y %H:%M").to_string(),
+        width,
+        height,
+        image_base64,
+    })
+}
+
+// ─── v1.2.0: Language Detection ───────────────────────────────────
+
+#[derive(Serialize)]
+struct DetectedLanguage {
+    lang_code: String,
+    lang_name: String,
+    confidence: f64,
+    tesseract_code: String,
+}
+
+#[tauri::command]
+async fn detect_document_language(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<DetectedLanguage, ScannerError> {
+    let ocr_text = {
+        let cache = state.ocr_cache.lock().unwrap();
+        cache.get(&doc_id).map(|r| r.text.clone())
+    };
+
+    let text = ocr_text.ok_or_else(|| {
+        ScannerError::SystemError("Run OCR first to detect language".into())
+    })?;
+
+    let info = whatlang::detect(&text)
+        .ok_or_else(|| ScannerError::SystemError("Could not detect language".into()))?;
+
+    let tesseract_code = match info.lang() {
+        whatlang::Lang::Fra => "fra",
+        whatlang::Lang::Eng => "eng",
+        whatlang::Lang::Deu => "deu",
+        whatlang::Lang::Spa => "spa",
+        whatlang::Lang::Ita => "ita",
+        whatlang::Lang::Por => "por",
+        whatlang::Lang::Nld => "nld",
+        whatlang::Lang::Pol => "pol",
+        whatlang::Lang::Rus => "rus",
+        whatlang::Lang::Jpn => "jpn",
+        whatlang::Lang::Cmn => "chi_sim",
+        whatlang::Lang::Kor => "kor",
+        whatlang::Lang::Ara => "ara",
+        whatlang::Lang::Tur => "tur",
+        _ => "eng",
+    }
+    .to_string();
+
+    Ok(DetectedLanguage {
+        lang_code: format!("{:?}", info.lang()),
+        lang_name: format!("{:?}", info.lang()),
+        confidence: info.confidence(),
+        tesseract_code,
+    })
+}
+
+// ─── v1.2.0: Templates ────────────────────────────────────────────
+
+#[tauri::command]
+async fn list_templates() -> Result<Vec<templates::DocumentTemplate>, ScannerError> {
+    Ok(templates::load_templates())
+}
+
+#[tauri::command]
+async fn save_template(template: templates::DocumentTemplate) -> Result<Vec<templates::DocumentTemplate>, ScannerError> {
+    let mut all = templates::load_templates();
+    if let Some(existing) = all.iter_mut().find(|t| t.id == template.id) {
+        *existing = template;
+    } else {
+        all.push(template);
+    }
+    templates::save_templates(&all)?;
+    Ok(all)
+}
+
+#[tauri::command]
+async fn delete_template(template_id: String) -> Result<Vec<templates::DocumentTemplate>, ScannerError> {
+    let mut all = templates::load_templates();
+    all.retain(|t| t.id != template_id);
+    templates::save_templates(&all)?;
+    Ok(all)
+}
+
+#[tauri::command]
+async fn apply_template(
+    doc_id: String,
+    template_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<templates::TemplateResult, ScannerError> {
+    let png_data = {
+        let docs = state.documents.lock().unwrap();
+        let doc = docs.get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
+        doc.png_data.clone()
+    };
+
+    let all = templates::load_templates();
+    let template = all.iter().find(|t| t.id == template_id)
+        .ok_or_else(|| ScannerError::SystemError("Template non trouvé".into()))?;
+
+    let lang = {
+        let s = state.settings.lock().unwrap();
+        s.default_ocr_lang.clone()
+    };
+
+    templates::apply_template(&png_data, template, &lang)
+}
+
+// ─── v1.2.0: Document Comparison ──────────────────────────────────
+
+#[tauri::command]
+async fn compare_documents(
+    doc_id_a: String,
+    doc_id_b: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<comparison::ComparisonResult, ScannerError> {
+    let (png_a, png_b) = {
+        let docs = state.documents.lock().unwrap();
+        let a = docs.get(&doc_id_a)
+            .ok_or_else(|| ScannerError::SystemError("Document A non trouvé".into()))?
+            .png_data.clone();
+        let b = docs.get(&doc_id_b)
+            .ok_or_else(|| ScannerError::SystemError("Document B non trouvé".into()))?
+            .png_data.clone();
+        (a, b)
+    };
+
+    let (text_a, text_b) = {
+        let cache = state.ocr_cache.lock().unwrap();
+        (
+            cache.get(&doc_id_a).map(|r| r.text.clone()),
+            cache.get(&doc_id_b).map(|r| r.text.clone()),
+        )
+    };
+
+    comparison::compare_documents(
+        &png_a,
+        &png_b,
+        text_a.as_deref(),
+        text_b.as_deref(),
+    )
+}
+
+// ─── v1.2.0: PDF Forms ───────────────────────────────────────────
+
+#[tauri::command]
+async fn detect_pdf_form_fields(
+    file_path: String,
+) -> Result<Vec<pdf_forms::FormField>, ScannerError> {
+    pdf_forms::detect_form_fields(&file_path)
+}
+
+#[tauri::command]
+async fn fill_pdf_form(
+    file_path: String,
+    field_values: Vec<(String, String)>,
+) -> Result<(), ScannerError> {
+    pdf_forms::fill_form(&file_path, &field_values)
+}
+
+// ─── v2.0.0: AI via Groq ─────────────────────────────────────────
+
+#[tauri::command]
+async fn ai_ocr_document(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, ScannerError> {
+    let (image_base64, api_key) = {
+        let docs = state.documents.lock().unwrap();
+        let doc = docs.get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
+        let b64 = BASE64.encode(&doc.png_data);
+        let settings = state.settings.lock().unwrap();
+        let key = settings.groq_api_key.clone().unwrap_or_default();
+        (b64, key)
+    };
+
+    if api_key.is_empty() {
+        return Err(ScannerError::SystemError("Groq API key not configured".into()));
+    }
+
+    let client = groq::GroqClient::new(&api_key);
+    let result = client.vision(
+        "llama-3.2-90b-vision-preview",
+        "You are an OCR system. Extract ALL text visible in this document image. Return only the extracted text, preserving layout as much as possible. Do not add any commentary.",
+        "Extract all text from this document image.",
+        &image_base64,
+    ).await?;
+
+    // Cache the result
+    {
+        let mut cache = state.ocr_cache.lock().unwrap();
+        cache.insert(doc_id.clone(), ocr::OcrResult {
+            text: result.clone(),
+            words: Vec::new(),
+            lang: "ai".to_string(),
+        });
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+async fn summarize_document(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, ScannerError> {
+    let (text, api_key) = {
+        let cache = state.ocr_cache.lock().unwrap();
+        let text = cache.get(&doc_id).map(|r| r.text.clone())
+            .ok_or_else(|| ScannerError::SystemError("Run OCR first".into()))?;
+        let settings = state.settings.lock().unwrap();
+        let key = settings.groq_api_key.clone().unwrap_or_default();
+        (text, key)
+    };
+
+    if api_key.is_empty() {
+        return Err(ScannerError::SystemError("Groq API key not configured".into()));
+    }
+
+    let client = groq::GroqClient::new(&api_key);
+    client.chat(
+        "llama-3.3-70b-versatile",
+        "You are a document summarization assistant. Provide a clear, concise summary of the document text. Highlight key information: dates, amounts, names, and important details. Use bullet points for clarity.",
+        &text,
+        Some(0.3),
+        Some(1024),
+    ).await
+}
+
+#[tauri::command]
+async fn translate_document(
+    doc_id: String,
+    target_lang: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, ScannerError> {
+    let (text, api_key) = {
+        let cache = state.ocr_cache.lock().unwrap();
+        let text = cache.get(&doc_id).map(|r| r.text.clone())
+            .ok_or_else(|| ScannerError::SystemError("Run OCR first".into()))?;
+        let settings = state.settings.lock().unwrap();
+        let key = settings.groq_api_key.clone().unwrap_or_default();
+        (text, key)
+    };
+
+    if api_key.is_empty() {
+        return Err(ScannerError::SystemError("Groq API key not configured".into()));
+    }
+
+    let client = groq::GroqClient::new(&api_key);
+    client.chat(
+        "llama-3.3-70b-versatile",
+        &format!("You are a professional translator. Translate the following document text to {}. Preserve formatting and structure. Return only the translation, no commentary.", target_lang),
+        &text,
+        Some(0.2),
+        Some(4096),
+    ).await
+}
+
+#[tauri::command]
+async fn semantic_search(
+    query: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<search::SearchResult>, ScannerError> {
+    // Build corpus from OCR cache + history
+    let history = storage::load_history();
+    let cache = state.ocr_cache.lock().unwrap();
+
+    let mut corpus: Vec<(String, String, String)> = Vec::new();
+
+    for entry in &history {
+        let text = cache
+            .get(&entry.id)
+            .map(|r| r.text.clone())
+            .or_else(|| entry.ocr_text.clone())
+            .unwrap_or_default();
+
+        if !text.is_empty() {
+            corpus.push((entry.id.clone(), entry.name.clone(), text));
+        }
+    }
+
+    Ok(search::semantic_search(&query, &corpus, 20))
+}
+
+// ─── v2.0.0: Auto Redaction ──────────────────────────────────────
+
+#[derive(Serialize, Deserialize)]
+struct SensitiveItem {
+    text: String,
+    category: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+#[tauri::command]
+async fn detect_sensitive_info(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<SensitiveItem>, ScannerError> {
+    let (words, img_width, img_height) = {
+        let cache = state.ocr_cache.lock().unwrap();
+        let ocr = cache.get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Run OCR first".into()))?;
+        let docs = state.documents.lock().unwrap();
+        let doc = docs.get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
+        (ocr.words.clone(), doc.width, doc.height)
+    };
+
+    let patterns = intelligence::get_sensitive_patterns();
+    let mut items = Vec::new();
+
+    for word in &words {
+        for (category, re) in &patterns {
+            if re.is_match(&word.text) {
+                items.push(SensitiveItem {
+                    text: word.text.clone(),
+                    category: category.to_string(),
+                    x: word.x as f64 / img_width as f64,
+                    y: word.y as f64 / img_height as f64,
+                    width: word.w as f64 / img_width as f64,
+                    height: word.h as f64 / img_height as f64,
+                });
+            }
+        }
+    }
+
+    Ok(items)
+}
+
+#[tauri::command]
+async fn apply_redactions(
+    doc_id: String,
+    redactions: Vec<SensitiveItem>,
+    state: tauri::State<'_, AppState>,
+) -> Result<ScanResultDto, ScannerError> {
+    let (png_data, dpi) = {
+        let docs = state.documents.lock().unwrap();
+        let doc = docs.get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
+        (doc.png_data.clone(), doc.dpi)
+    };
+
+    push_version(&doc_id, &png_data, &state);
+
+    let mut img = image::load_from_memory(&png_data)
+        .map_err(|e| ScannerError::SystemError(format!("Décodage: {}", e)))?;
+    let (w, h) = (img.width(), img.height());
+
+    // Draw black rectangles over redacted areas
+    let img_buf = img.as_mut_rgba8()
+        .ok_or_else(|| ScannerError::SystemError("Image conversion failed".into()))?;
+
+    for redaction in &redactions {
+        let rx = (redaction.x * w as f64) as u32;
+        let ry = (redaction.y * h as f64) as u32;
+        let rw = (redaction.width * w as f64) as u32;
+        let rh = (redaction.height * h as f64) as u32;
+
+        for py in ry..((ry + rh).min(h)) {
+            for px in rx..((rx + rw).min(w)) {
+                img_buf.put_pixel(px, py, image::Rgba([0, 0, 0, 255]));
+            }
+        }
+    }
+
+    let mut buf = Vec::new();
+    image::DynamicImage::ImageRgba8(img_buf.clone())
+        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+        .map_err(|e| ScannerError::SystemError(format!("Encode: {}", e)))?;
+
+    let width = w;
+    let height = h;
+    let image_base64 = BASE64.encode(&buf);
+
+    {
+        let mut docs = state.documents.lock().unwrap();
+        docs.insert(doc_id.clone(), DocumentData {
+            png_data: buf,
+            original_png_data: None,
+            width,
+            height,
+            dpi,
+        });
+    }
+
+    state.ocr_cache.lock().unwrap().remove(&doc_id);
+
+    let now = Local::now();
+    Ok(ScanResultDto {
+        id: doc_id,
+        name: format!("Redacted_{}.png", now.format("%H%M%S")),
+        date: now.format("%d/%m/%Y %H:%M").to_string(),
+        width,
+        height,
+        image_base64,
+    })
+}
+
+// ─── v2.0.0: Table Extraction ────────────────────────────────────
+
+#[tauri::command]
+async fn detect_tables(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<tables::DetectedTable>, ScannerError> {
+    let (words, img_width, img_height) = {
+        let cache = state.ocr_cache.lock().unwrap();
+        let ocr = cache.get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Run OCR first".into()))?;
+        let docs = state.documents.lock().unwrap();
+        let doc = docs.get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
+        (ocr.words.clone(), doc.width, doc.height)
+    };
+
+    Ok(tables::detect_tables(&words, img_width, img_height))
+}
+
+#[tauri::command]
+async fn export_table_csv(
+    table: tables::DetectedTable,
+) -> Result<String, ScannerError> {
+    Ok(tables::table_to_csv(&table))
+}
+
+// ─── Phase 5: Barcode Detection ──────────────────────────────────
+
+#[derive(Serialize)]
+struct BarcodeResult {
+    text: String,
+    format: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+#[tauri::command]
+async fn detect_barcodes(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<BarcodeResult>, ScannerError> {
+    let (png_data, img_width, img_height) = {
+        let docs = state.documents.lock().unwrap();
+        let doc = docs.get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
+        (doc.png_data.clone(), doc.width, doc.height)
+    };
+
+    let img = image::load_from_memory(&png_data)
+        .map_err(|e| ScannerError::SystemError(format!("Décodage: {}", e)))?;
+    let luma = img.to_luma8();
+
+    let mut results = Vec::new();
+
+    // Use rxing for barcode detection
+    use rxing::Reader;
+    let mut multi_reader = rxing::MultiFormatReader::default();
+    let hints = rxing::DecodingHintDictionary::new();
+
+    // Create a binary bitmap from the image
+    let source = rxing::BufferedImageLuminanceSource::new(
+        image::DynamicImage::ImageLuma8(luma.clone()),
+    );
+    let binarizer = rxing::common::HybridBinarizer::new(source);
+    let mut bitmap = rxing::BinaryBitmap::new(binarizer);
+
+    match multi_reader.decode_with_hints(&mut bitmap, &hints) {
+        Ok(result) => {
+            let points = result.getPoints();
+            let (x, y, w, h) = if points.len() >= 2 {
+                let min_x = points.iter().map(|p| p.x).fold(f32::MAX, f32::min);
+                let min_y = points.iter().map(|p| p.y).fold(f32::MAX, f32::min);
+                let max_x = points.iter().map(|p| p.x).fold(f32::MIN, f32::max);
+                let max_y = points.iter().map(|p| p.y).fold(f32::MIN, f32::max);
+                (min_x as f64, min_y as f64, (max_x - min_x) as f64, (max_y - min_y) as f64)
+            } else {
+                (0.0, 0.0, img_width as f64, img_height as f64)
+            };
+
+            results.push(BarcodeResult {
+                text: result.getText().to_string(),
+                format: format!("{:?}", result.getBarcodeFormat()),
+                x: x / img_width as f64,
+                y: y / img_height as f64,
+                width: w / img_width as f64,
+                height: h / img_height as f64,
+            });
+        }
+        Err(_) => {} // No barcode found
+    }
+
+    Ok(results)
+}
+
+// ─── Phase 5: Statistics ─────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct AppStats {
+    total_scans: u64,
+    total_exports: u64,
+    total_ocr_runs: u64,
+    total_pages_scanned: u64,
+    formats_used: HashMap<String, u64>,
+    scans_by_month: HashMap<String, u64>,
+}
+
+fn stats_path() -> std::path::PathBuf {
+    storage::config_dir_pub().join("stats.json")
+}
+
+fn load_stats() -> AppStats {
+    std::fs::read_to_string(stats_path())
+        .ok()
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default()
+}
+
+fn save_stats(stats: &AppStats) -> Result<(), ScannerError> {
+    let json = serde_json::to_string_pretty(stats)
+        .map_err(|e| ScannerError::SystemError(format!("Serialize stats: {}", e)))?;
+    std::fs::write(stats_path(), json)
+        .map_err(|e| ScannerError::SystemError(format!("Write stats: {}", e)))?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_statistics() -> Result<AppStats, ScannerError> {
+    Ok(load_stats())
+}
+
+#[tauri::command]
+async fn increment_stat(
+    stat_name: String,
+    value: Option<u64>,
+) -> Result<(), ScannerError> {
+    let mut stats = load_stats();
+    let increment = value.unwrap_or(1);
+    match stat_name.as_str() {
+        "scans" => stats.total_scans += increment,
+        "exports" => stats.total_exports += increment,
+        "ocr" => stats.total_ocr_runs += increment,
+        "pages" => stats.total_pages_scanned += increment,
+        _ => {}
+    }
+    let month = chrono::Local::now().format("%Y-%m").to_string();
+    *stats.scans_by_month.entry(month).or_insert(0) += increment;
+    save_stats(&stats)
+}
+
+// ─── Phase 5: TIFF Multi-page Export ─────────────────────────────
+
+#[tauri::command]
+async fn save_multipage_as_tiff(
+    doc_ids: Vec<String>,
+    output_path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, ScannerError> {
+    use tiff::encoder::TiffEncoder;
+    use tiff::encoder::colortype;
+
+    let file = std::fs::File::create(&output_path)
+        .map_err(|e| ScannerError::SystemError(format!("Create TIFF: {}", e)))?;
+    let mut encoder = TiffEncoder::new(file)
+        .map_err(|e| ScannerError::SystemError(format!("TIFF encoder: {}", e)))?;
+
+    let docs = state.documents.lock().unwrap();
+
+    for doc_id in &doc_ids {
+        let doc = docs.get(doc_id)
+            .ok_or_else(|| ScannerError::SystemError(format!("Document {} non trouvé", doc_id)))?;
+
+        let img = image::load_from_memory(&doc.png_data)
+            .map_err(|e| ScannerError::SystemError(format!("Décodage: {}", e)))?;
+        let rgba = img.to_rgba8();
+
+        encoder
+            .write_image::<colortype::RGBA8>(rgba.width(), rgba.height(), rgba.as_raw())
+            .map_err(|e| ScannerError::SystemError(format!("Write TIFF page: {}", e)))?;
+    }
+
+    Ok(output_path)
+}
+
+// ─── Phase 5: Smart Compression ──────────────────────────────────
+
+#[derive(Serialize)]
+struct CompressionResult {
+    output_path: String,
+    original_size: u64,
+    compressed_size: u64,
+    reduction_percent: f64,
+}
+
+#[tauri::command]
+async fn smart_compress(
+    doc_id: String,
+    output_path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<CompressionResult, ScannerError> {
+    let png_data = {
+        let docs = state.documents.lock().unwrap();
+        let doc = docs.get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
+        doc.png_data.clone()
+    };
+
+    let original_size = png_data.len() as u64;
+
+    // Analyze content to decide compression strategy
+    let img = image::load_from_memory(&png_data)
+        .map_err(|e| ScannerError::SystemError(format!("Décodage: {}", e)))?;
+
+    // Heuristic: if image is mostly text (high contrast, few colors), use PNG
+    // Otherwise, use JPEG with adaptive quality
+    let rgba = img.to_rgba8();
+    let mut unique_colors = std::collections::HashSet::new();
+    let sample_step = (rgba.width() * rgba.height() / 10000).max(1);
+    for (i, pixel) in rgba.pixels().enumerate() {
+        if i as u32 % sample_step == 0 {
+            unique_colors.insert((pixel[0] / 32, pixel[1] / 32, pixel[2] / 32));
+        }
+    }
+
+    let is_text_heavy = unique_colors.len() < 50;
+
+    let ext = std::path::Path::new(&output_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png")
+        .to_lowercase();
+
+    match ext.as_str() {
+        "jpg" | "jpeg" => {
+            let quality = if is_text_heavy { 95 } else { 75 };
+            img.save_with_format(&output_path, image::ImageFormat::Jpeg)
+                .map_err(|e| ScannerError::SystemError(format!("Save JPEG: {}", e)))?;
+            // Re-save with specific quality
+            let mut buf = Vec::new();
+            let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, quality);
+            img.write_with_encoder(encoder)
+                .map_err(|e| ScannerError::SystemError(format!("Encode JPEG: {}", e)))?;
+            std::fs::write(&output_path, &buf)
+                .map_err(|e| ScannerError::SystemError(format!("Write: {}", e)))?;
+        }
+        _ => {
+            // Save as PNG (already compressed)
+            std::fs::write(&output_path, &png_data)
+                .map_err(|e| ScannerError::SystemError(format!("Write: {}", e)))?;
+        }
+    }
+
+    let compressed_size = std::fs::metadata(&output_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    let reduction = if original_size > 0 {
+        ((original_size as f64 - compressed_size as f64) / original_size as f64 * 100.0).max(0.0)
+    } else {
+        0.0
+    };
+
+    Ok(CompressionResult {
+        output_path,
+        original_size,
+        compressed_size,
+        reduction_percent: (reduction * 100.0).round() / 100.0,
+    })
+}
+
+// ─── Phase 5: Notion/Obsidian Export ─────────────────────────────
+
+#[tauri::command]
+async fn export_to_obsidian(
+    doc_id: String,
+    vault_path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, ScannerError> {
+    let (png_data, ocr_text) = {
+        let docs = state.documents.lock().unwrap();
+        let doc = docs.get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Document non trouvé".into()))?;
+        let cache = state.ocr_cache.lock().unwrap();
+        let text = cache.get(&doc_id).map(|r| r.text.clone()).unwrap_or_default();
+        (doc.png_data.clone(), text)
+    };
+
+    let history = storage::load_history();
+    let doc_name = history.iter().find(|h| h.id == doc_id)
+        .map(|h| h.name.clone())
+        .unwrap_or_else(|| format!("Document_{}", doc_id));
+
+    let safe_name = doc_name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
+
+    // Create attachment
+    let attachments_dir = std::path::Path::new(&vault_path).join("attachments");
+    let _ = std::fs::create_dir_all(&attachments_dir);
+    let img_filename = format!("{}.png", safe_name);
+    let img_path = attachments_dir.join(&img_filename);
+    std::fs::write(&img_path, &png_data)
+        .map_err(|e| ScannerError::SystemError(format!("Write attachment: {}", e)))?;
+
+    // Create markdown note
+    let now = chrono::Local::now();
+    let md_content = format!(
+        "# {}\n\nDate: {}\n\n![[attachments/{}]]\n\n## OCR Text\n\n{}\n",
+        safe_name,
+        now.format("%Y-%m-%d %H:%M"),
+        img_filename,
+        ocr_text,
+    );
+
+    let md_path = std::path::Path::new(&vault_path).join(format!("{}.md", safe_name));
+    std::fs::write(&md_path, md_content)
+        .map_err(|e| ScannerError::SystemError(format!("Write note: {}", e)))?;
+
+    Ok(md_path.to_string_lossy().to_string())
+}
+
+// ─── Phase 5: Custom Shortcuts ───────────────────────────────────
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct ShortcutsConfig {
+    shortcuts: HashMap<String, String>, // action -> key combo
+}
+
+fn shortcuts_path() -> std::path::PathBuf {
+    storage::config_dir_pub().join("shortcuts.json")
+}
+
+#[tauri::command]
+async fn load_shortcuts() -> Result<HashMap<String, String>, ScannerError> {
+    let path = shortcuts_path();
+    let config: ShortcutsConfig = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
+    Ok(config.shortcuts)
+}
+
+#[tauri::command]
+async fn save_shortcuts(
+    shortcuts: HashMap<String, String>,
+) -> Result<(), ScannerError> {
+    let config = ShortcutsConfig { shortcuts };
+    let json = serde_json::to_string_pretty(&config)
+        .map_err(|e| ScannerError::SystemError(format!("Serialize: {}", e)))?;
+    std::fs::write(shortcuts_path(), json)
+        .map_err(|e| ScannerError::SystemError(format!("Write: {}", e)))?;
+    Ok(())
+}
+
+// ─── v0.5.0: Email Sharing ────────────────────────────────────────
+
+#[tauri::command]
+async fn send_document_by_email(
+    doc_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, ScannerError> {
+    let png_data = {
+        let docs = state.documents.lock().unwrap();
+        let doc = docs
+            .get(&doc_id)
+            .ok_or_else(|| ScannerError::SystemError("Document non trouvé en mémoire".into()))?;
+        doc.png_data.clone()
+    };
+
+    // Save to temp file
+    let tmp_path = std::env::temp_dir().join(format!("photon_email_{}.png", Uuid::new_v4()));
+    std::fs::write(&tmp_path, &png_data)
+        .map_err(|e| ScannerError::SystemError(format!("Fichier temporaire: {}", e)))?;
+
+    let path_str = tmp_path.to_string_lossy().to_string();
+
+    // Open default mail client via mailto: URL
+    let mailto = "mailto:?subject=Document%20Photon&body=Please%20find%20the%20attached%20document.";
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        Command::new("open")
+            .arg(mailto)
+            .spawn()
+            .map_err(|e| ScannerError::SystemError(format!("Ouverture email: {}", e)))?;
+    }
+
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+        Command::new("cmd")
+            .args(["/c", "start", "", mailto])
+            .spawn()
+            .map_err(|e| ScannerError::SystemError(format!("Ouverture email: {}", e)))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        Command::new("xdg-open")
+            .arg(mailto)
+            .spawn()
+            .map_err(|e| ScannerError::SystemError(format!("Ouverture email: {}", e)))?;
+    }
+
+    Ok(path_str)
+}
+
 // ─── App Setup ────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2219,8 +3400,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
                 .max_file_size(5_000_000) // 5 MB rotation
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                .target(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout))
                 .build(),
         )
         .manage(AppState {
@@ -2228,6 +3411,8 @@ pub fn run() {
             multi_page_docs: Mutex::new(HashMap::new()),
             settings: Mutex::new(settings),
             ocr_cache: Mutex::new(HashMap::new()),
+            vault_manager: Mutex::new(vault::VaultManager::new()),
+            version_history: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             // v0.1.0
@@ -2288,11 +3473,65 @@ pub fn run() {
             get_tag_definitions,
             save_tag_definitions_cmd,
             get_all_tags_map,
+            // v0.5.0: Email
+            send_document_by_email,
+            // v1.1.0: Vault
+            vault_is_setup,
+            vault_is_unlocked,
+            vault_set_password,
+            vault_unlock,
+            vault_lock,
+            vault_add_document,
+            vault_list_documents,
+            vault_open_document,
+            vault_remove_document,
+            // v1.2.0: Version History
+            get_document_versions,
+            undo_last_change,
+            rollback_to_version,
+            // v1.2.0: Language Detection
+            detect_document_language,
             // v0.6.0: Automation rules
             list_automation_rules,
             save_automation_rule,
             delete_automation_rule,
             apply_rule_actions,
+            // v1.2.0: Templates
+            list_templates,
+            save_template,
+            delete_template,
+            apply_template,
+            // v1.2.0: Document Comparison
+            compare_documents,
+            // v1.2.0: PDF Forms
+            detect_pdf_form_fields,
+            fill_pdf_form,
+            // v2.0.0: AI via Groq
+            ai_ocr_document,
+            summarize_document,
+            translate_document,
+            // v2.0.0: Semantic Search
+            semantic_search,
+            // v2.0.0: Auto Redaction
+            detect_sensitive_info,
+            apply_redactions,
+            // v2.0.0: Table Extraction
+            detect_tables,
+            export_table_csv,
+            // Extras: Barcode
+            detect_barcodes,
+            // Extras: Statistics
+            get_statistics,
+            increment_stat,
+            // Extras: TIFF
+            save_multipage_as_tiff,
+            // Extras: Compression
+            smart_compress,
+            // Extras: Obsidian
+            export_to_obsidian,
+            // Extras: Shortcuts
+            load_shortcuts,
+            save_shortcuts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

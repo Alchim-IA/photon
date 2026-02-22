@@ -1,6 +1,7 @@
 pub mod wia;
 pub mod ica;
 pub mod sane;
+pub mod escl;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -84,7 +85,7 @@ pub fn get_backend() -> Box<dyn ScannerBackend + Send + Sync> {
     #[cfg(windows)]
     return Box::new(wia::WiaBackend::new());
     #[cfg(target_os = "macos")]
-    return Box::new(ica::IcaBackend::new());
+    return Box::new(escl::EsclBackend::new());
     #[cfg(target_os = "linux")]
     return Box::new(sane::SaneBackend::new());
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]

@@ -73,7 +73,14 @@
     "previewing": "Prévisualisation...",
     "importing": "Importation en cours...",
     "importComplete": "{{count}} page(s) importée(s)",
-    "importError": "Erreur d'importation: {{error}}"
+    "importError": "Erreur d'importation: {{error}}",
+    "vaultError": "Erreur coffre-fort: {{error}}",
+    "vaultAdded": "Document ajouté au coffre-fort",
+    "undone": "Action annulée",
+    "emailing": "Envoi par email...",
+    "emailSent": "Email envoyé",
+    "redactionApplied": "Caviardage appliqué",
+    "tableSaved": "Tableau copié dans le presse-papier"
   },
   "dropzone": {
     "title": "Déposez vos fichiers ici",
@@ -107,7 +114,12 @@
     "ocrTooltip": "Reconnaissance de texte (OCR)",
     "analyzeTooltip": "Analyse intelligente (classification + extraction)",
     "apply": "Appliquer",
-    "close": "Fermer"
+    "close": "Fermer",
+    "email": "Email",
+    "vault": "Coffre-fort",
+    "ai": "IA",
+    "stats": "Statistiques",
+    "undo": "Annuler"
   },
   "preview": {
     "tabPreview": "Aperçu",
@@ -207,7 +219,15 @@
     "rotate180": "Rotation 180°",
     "flipH": "Retourner horizontalement",
     "flipV": "Retourner verticalement",
-    "removeFromPages": "Retirer du multipage"
+    "removeFromPages": "Retirer du multipage",
+    "email": "Envoyer par email",
+    "addToVault": "Ajouter au coffre-fort",
+    "addWatermark": "Ajouter un filigrane",
+    "editWatermark": "Modifier le filigrane",
+    "removeWatermark": "Supprimer le filigrane",
+    "addSignature": "Ajouter une signature",
+    "editSignature": "Modifier la signature",
+    "removeSignature": "Supprimer la signature"
   },
   "settings": {
     "title": "Paramètres",
@@ -243,7 +263,9 @@
     "ocrLanguage": "Langue OCR",
     "language": "Langue de l'interface",
     "cancel": "Annuler",
-    "save": "Enregistrer"
+    "save": "Enregistrer",
+    "groqApiKey": "Clé API Groq",
+    "groqApiKeyDesc": "Nécessaire pour les fonctionnalités IA (résumé, traduction, etc.)"
   },
   "rules": {
     "title": "Règles d'automatisation",
@@ -367,6 +389,74 @@
     "zoomIn": "Zoom avant",
     "zoomOut": "Zoom arrière",
     "close": "Fermer"
+  },
+  "export": {
+    "title": "Export PDF avancé",
+    "pdfa": "Conformité PDF/A",
+    "pdfaNone": "Aucune (PDF standard)",
+    "encryption": "Chiffrement",
+    "userPassword": "Mot de passe utilisateur",
+    "ownerPassword": "Mot de passe propriétaire",
+    "passwordPlaceholder": "Laisser vide pour désactiver",
+    "ownerPasswordPlaceholder": "Laisser vide pour désactiver",
+    "annotations": "Annotations",
+    "annotationCount": "{{count}} annotation(s) seront incluses",
+    "annotationHighlight": "Surlignage",
+    "annotationEllipse": "Ellipse",
+    "annotationTextNote": "Note de texte",
+    "annotationClear": "Effacer les annotations",
+    "annotationTextPrompt": "Texte de la note:",
+    "overlays": "Superpositions",
+    "watermarkActive": "Filigrane actif: \"{{text}}\"",
+    "signaturePlaced": "Signature placée sur le document",
+    "integrity": "Intégrité",
+    "integrityInfo": "Un hash SHA-256 sera calculé pour vérifier l'intégrité du document.",
+    "exportBtn": "Exporter le PDF",
+    "watermark": "Filigrane",
+    "watermarkText": "Texte du filigrane",
+    "watermarkTextPlaceholder": "Ex: CONFIDENTIEL",
+    "watermarkOpacity": "Opacité",
+    "watermarkRotation": "Rotation",
+    "watermarkPosition": "Position",
+    "watermarkFontSize": "Taille de police",
+    "watermarkColor": "Couleur",
+    "watermarkConfirm": "Appliquer le filigrane",
+    "positionDiagonal": "Diagonale",
+    "positionCenter": "Centre",
+    "positionTopLeft": "Haut gauche",
+    "positionTopRight": "Haut droite",
+    "positionBottomLeft": "Bas gauche",
+    "positionBottomRight": "Bas droite",
+    "signatureTitle": "Signature",
+    "signatureDrawHint": "Dessinez votre signature ci-dessous ou importez une image.",
+    "signatureClear": "Effacer",
+    "signatureImport": "Importer image",
+    "signatureConfirm": "Valider la signature"
+  },
+  "vault": {
+    "title": "Coffre-fort",
+    "documents": "document(s)",
+    "filterPlaceholder": "Filtrer les documents...",
+    "lock": "Verrouiller",
+    "enterPassword": "Entrez le mot de passe du coffre-fort",
+    "createPassword": "Créez un mot de passe pour le coffre-fort",
+    "passwordPlaceholder": "Mot de passe",
+    "unlock": "Déverrouiller",
+    "noResults": "Aucun document trouvé",
+    "empty": "Le coffre-fort est vide"
+  },
+  "stats": {
+    "title": "Statistiques",
+    "totalScans": "Total numérisations",
+    "totalExports": "Total exports",
+    "totalOcr": "Total OCR",
+    "totalPages": "Total pages numérisées",
+    "formatsUsed": "Formats utilisés"
+  },
+  "ai": {
+    "redactionTitle": "Caviardage de données sensibles",
+    "redactionDesc": "{{count}} élément(s) sensible(s) détecté(s). Le caviardage masquera ces informations de manière irréversible.",
+    "applyRedactions": "Appliquer le caviardage"
   },
   "update": {
     "available": "Mise à jour disponible",

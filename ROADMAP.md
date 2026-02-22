@@ -2,7 +2,7 @@
 
 # Roadmap
 
-### Scanner de Documents — Fonctionnalites planifiees
+### Photon — Fonctionnalites planifiees
 
 <br/>
 
@@ -27,76 +27,12 @@ Ce document presente les evolutions envisagees pour l'application, organisees pa
 
 ---
 
-## v0.1.0 — Fondations *(actuelle)*
-
-| Statut | Fonctionnalite |
-|:------:|:---------------|
-| :white_check_mark: | Detection et connexion aux scanners (WIA / ICA / SANE) |
-| :white_check_mark: | Numerisation avec configuration (DPI, couleur, format, duplex, ADF) |
-| :white_check_mark: | Previsualisation des documents numerises |
-| :white_check_mark: | Export PDF et image (PNG, JPEG) |
-| :white_check_mark: | Historique des documents avec miniatures |
-| :white_check_mark: | Persistance des parametres et de l'historique |
-| :white_check_mark: | Interface glassmorphisme "Frosted Touch" |
-| :white_check_mark: | Theme sombre / clair / auto |
-| :white_check_mark: | Recadrage automatique |
-| :white_check_mark: | Impression directe |
-
-<br/>
-
----
-
-## v0.2.0 — OCR et recherche *(implementee)*
-
-| Statut | Fonctionnalite | Description |
-|:------:|:---------------|:------------|
-| :white_check_mark: | **OCR integre** | Reconnaissance de texte via Tesseract embarque (pas de dependance externe). Extraction automatique du texte apres numerisation. |
-| :white_check_mark: | **PDF searchable** | Generation de PDF avec couche texte invisible (PDF/A). Le texte OCR est integre dans le fichier pour permettre la recherche. |
-| :white_check_mark: | **Recherche full-text** | Barre de recherche dans l'historique. Recherche par contenu OCR, nom de fichier, date. |
-| :white_check_mark: | **Copier le texte** | Selection et copie du texte extrait directement depuis la previsualisation. |
-| :clipboard: | **Detection de langue** | Identification automatique de la langue du document pour optimiser l'OCR. |
-
-<br/>
-
----
-
-## v0.3.0 — Edition et traitement avance *(implementee)*
-
-| Statut | Fonctionnalite | Description |
-|:------:|:---------------|:------------|
-| :white_check_mark: | **Rotation et retournement** | Rotation 90/180/270 et miroir horizontal/vertical dans la previsualisation. |
-| :white_check_mark: | **Ajustements manuels** | Luminosite, contraste, saturation, nettete — curseurs en temps reel. |
-| :white_check_mark: | **Debruitage** | Filtre de reduction du bruit pour les documents anciens ou de mauvaise qualite. |
-| :white_check_mark: | **Redressement automatique** | Detection de l'inclinaison (deskew) et correction automatique de l'angle. |
-| :white_check_mark: | **Suppression de fond** | Blanchiment du fond pour les documents numerises sur surface coloree. |
-| :white_check_mark: | **Fusion de pages** | Combiner plusieurs numerisations en un seul document PDF multi-pages. |
-| :white_check_mark: | **Reordonner les pages** | Glisser-deposer pour reorganiser les pages d'un document multi-pages. |
-
-<br/>
-
----
-
-## v0.4.0 — Productivite et workflow *(implementee)*
-
-| Statut | Fonctionnalite | Description |
-|:------:|:---------------|:------------|
-| :white_check_mark: | **Profils de numerisation** | Sauvegarder des presets nommes (ex: "Factures 300dpi N&B", "Photos 1200dpi couleur"). Changement en un clic. |
-| :white_check_mark: | **Numerisation par lot** | Mode batch : numeriser N pages automatiquement avec le chargeur ADF, nommage sequentiel. |
-| :white_check_mark: | **Raccourcis clavier** | `Ctrl+S` numeriser, `Ctrl+Shift+S` PDF, `Ctrl+E` exporter, `Ctrl+P` imprimer, `Ctrl+O` OCR. |
-| :white_check_mark: | **Nommage automatique** | Templates de noms de fichiers : `{date}_{time}_{counter}.pdf`. Configurable dans les parametres. |
-| :white_check_mark: | **Dossier de surveillance** | Export automatique vers un dossier specifique a chaque numerisation. |
-| :white_check_mark: | **Actions rapides** | Menu contextuel (clic droit) sur un document : renommer, dupliquer, ajouter aux pages, supprimer. |
-
-<br/>
-
----
-
 ## v0.5.0 — Cloud et partage
 
 | Statut | Fonctionnalite | Description |
 |:------:|:---------------|:------------|
-| :bulb: | **Envoi par email** | Envoyer directement un document numerise par email (SMTP ou client par defaut). |
-| :bulb: | **Integration cloud** | Upload vers Google Drive, OneDrive, Dropbox. OAuth2 integre. |
+| :clipboard: | **Envoi par email** | Envoyer directement un document numerise par email (SMTP ou client par defaut). |
+| :clipboard: | **Integration cloud** | Upload vers Google Drive, OneDrive, Dropbox. OAuth2 integre. |
 | :bulb: | **Partage reseau** | Enregistrement direct vers un partage SMB/NFS. |
 | :bulb: | **QR Code / lien** | Generer un lien ou QR code temporaire pour partager un document. |
 | :bulb: | **WebDAV / Nextcloud** | Synchronisation avec un serveur WebDAV pour les solutions auto-hebergees. |
@@ -105,31 +41,71 @@ Ce document presente les evolutions envisagees pour l'application, organisees pa
 
 ---
 
-## v0.6.0 — Intelligence et automatisation *(implementee)*
+## v1.1.0 — Signature et securite
 
 | Statut | Fonctionnalite | Description |
 |:------:|:---------------|:------------|
-| :white_check_mark: | **Classification automatique** | Detection du type de document (12 types : facture, carte d'identite, contrat, courrier, recu, formulaire, CV, ordonnance, releve bancaire, bulletin de paie, devis, autre) via heuristique avancee par mots-cles ponderes. |
-| :white_check_mark: | **Extraction de donnees** | Extraction structuree des champs (montants, dates, IBAN, emails, telephones, SIRET/SIREN, numeros de document) via regex. |
-| :white_check_mark: | **Tags et categories** | Systeme de tags manuels et automatiques avec definitions personnalisables (nom + couleur). Stockage separe dans tags.json. |
-| :white_check_mark: | **Regles d'automatisation** | Moteur de regles avance avec conditions multiples (ET/OU), 6 types de conditions, 4 types d'actions (renommer, deplacer, ajouter tag, appliquer profil). |
-| :white_check_mark: | **Suggestions intelligentes** | Suggestions de nom de fichier, dossier de destination et tags bases sur la classification et l'extraction de donnees. |
+| :clipboard: | **Signature electronique** | Apposer une signature manuscrite (dessin ou image) sur un document PDF. Pad de dessin integre + import image. |
+| :clipboard: | **Filigrane (watermark)** | Ajouter un texte ou logo en filigrane sur les documents exportes. Position, opacite, rotation configurables. |
+| :clipboard: | **Verification d'integrite** | Hash SHA-256 des documents exportes, affiche dans les metadonnees. Permet de verifier qu'un document n'a pas ete altere. |
+| :bulb: | **Chiffrement AES-256** | Remplacer RC4-128 par AES-256 pour le chiffrement PDF, conformite PDF 2.0. |
+| :bulb: | **Coffre-fort local** | Espace de stockage chiffre pour les documents sensibles, deverrouillage par mot de passe maitre. |
 
 <br/>
 
 ---
 
-## v1.0.0 — Polish et stabilite *(implementee)*
+## v1.2.0 — Productivite avancee
 
 | Statut | Fonctionnalite | Description |
 |:------:|:---------------|:------------|
-| :white_check_mark: | **Internationalisation (i18n)** | Support bilingue francais / anglais. Contexte React custom avec fichiers JSON, interpolation `{{param}}`, persistance localStorage. |
-| :white_check_mark: | **Accessibilite (a11y)** | Navigation clavier complete, roles ARIA (radio, tab, dialog, menu, status, progressbar), focus trap modales, skip link, focus-visible, `prefers-reduced-motion`, `prefers-contrast: more`. |
-| :white_check_mark: | **Mise a jour automatique** | Verification et installation via `tauri-plugin-updater` + GitHub Releases. Toast de notification avec installation en un clic. |
-| :white_check_mark: | **Onboarding** | Assistant 5 etapes (langue, scanner, dossier, test, fin) + tour guide 7 etapes avec spotlight overlay. Migration automatique des utilisateurs existants. |
-| :bulb: | **Systeme de plugins** | API pour etendre l'application (export vers ERP, integration metier, formats specifiques). |
-| :white_check_mark: | **Mode portable** | Detection `portable.marker` a cote de l'executable, configuration stockee dans `data/` adjacent. OnceLock pour thread-safety. |
-| :white_check_mark: | **Journalisation** | `tauri-plugin-log` avec rotation 5 Mo et sortie stdout en debug. |
+| :clipboard: | **Comparaison de documents** | Comparer visuellement deux versions d'un meme document (diff visuel cote a cote avec surbrillance des differences). |
+| :clipboard: | **Detection de langue** | Identification automatique de la langue du document pour optimiser l'OCR. Basee sur l'analyse de frequence des caracteres. |
+| :clipboard: | **Formulaires PDF** | Remplissage de champs de formulaire PDF existants. Detection automatique des zones de saisie. |
+| :bulb: | **Modeles de documents** | Definir des zones sur un type de document (ex: facture) pour extraire toujours les memes champs automatiquement. |
+| :bulb: | **Historique de versions** | Conserver un historique des modifications d'un document avec possibilite de revenir a une version precedente. |
+
+<br/>
+
+---
+
+## v1.3.0 — Integration et automatisation
+
+| Statut | Fonctionnalite | Description |
+|:------:|:---------------|:------------|
+| :clipboard: | **Integration CLI** | Commande `photon scan --dpi 300 --output facture.pdf` pour scripting et automatisation. |
+| :clipboard: | **API REST locale** | Serveur HTTP local pour piloter l'application depuis d'autres logiciels. Endpoints scan, export, OCR. |
+| :clipboard: | **Systeme de plugins** | API pour etendre l'application (export vers ERP, integration metier, formats specifiques). |
+| :bulb: | **Webhooks** | Notifications HTTP a chaque numerisation ou export. Integration avec Zapier, n8n, IFTTT. |
+| :bulb: | **Dossiers surveilles (import)** | Surveiller un dossier pour importer automatiquement tout nouveau fichier depose et appliquer les regles d'automatisation. |
+
+<br/>
+
+---
+
+## v1.4.0 — Multi-utilisateurs et collaboration
+
+| Statut | Fonctionnalite | Description |
+|:------:|:---------------|:------------|
+| :bulb: | **Mode kiosque** | Interface simplifiee pour utilisation partagee (bureau d'accueil, bibliotheque). Ecran de selection utilisateur. |
+| :bulb: | **Scanner a distance** | Piloter un scanner connecte a un autre poste sur le reseau local via un mode serveur/client. |
+| :bulb: | **Profils utilisateurs** | Chaque utilisateur a ses propres parametres, profils de scan, regles et tags. |
+| :bulb: | **Journal d'activite** | Tracer qui a numerise quoi et quand. Export CSV du journal. |
+
+<br/>
+
+---
+
+## v2.0.0 — IA et analyse avancee
+
+| Statut | Fonctionnalite | Description |
+|:------:|:---------------|:------------|
+| :bulb: | **OCR par IA (LLM)** | Utiliser un modele de vision (local ou API) pour extraire le texte de documents complexes (tableaux, manuscrits). |
+| :bulb: | **Resume automatique** | Generer un resume d'une page pour les documents longs via LLM local. |
+| :bulb: | **Traduction integree** | Traduire le texte OCR dans une autre langue directement dans l'application. |
+| :bulb: | **Recherche semantique** | Rechercher par sens plutot que par mots-cles exacts grace a des embeddings locaux. |
+| :bulb: | **Redaction automatique** | Detecter et masquer automatiquement les informations sensibles (numeros de secu, IBAN) avant partage. |
+| :bulb: | **Extraction de tableaux** | Detecter et extraire les tableaux en CSV/Excel depuis les documents numerises. |
 
 <br/>
 
@@ -139,16 +115,15 @@ Ce document presente les evolutions envisagees pour l'application, organisees pa
 
 Ces idees ne sont pas encore planifiees mais meritent d'etre explorees :
 
-- **Signature electronique** — Apposer une signature manuscrite (dessin ou image) sur un document PDF
-- **Filigrane (watermark)** — Ajouter un texte ou logo en filigrane sur les documents exportes
-- **Comparaison de documents** — Comparer visuellement deux versions d'un meme document (diff visuel)
-- **Mode kiosque** — Interface simplifiee pour utilisation partagee (bureau d'accueil, bibliotheque)
-- **Scanner a distance** — Piloter un scanner connecte a un autre poste sur le reseau local
-- **Archivage long terme (PDF/A)** — Export au format PDF/A pour archivage conforme
-- **Chiffrement** — Protection par mot de passe des documents PDF exportes
-- **Annotations** — Surligner, entourer, ajouter des notes sur les documents numerises
-- **Integration CLI** — Commande `scanner-cli scan --dpi 300 --output facture.pdf` pour scripting et automatisation
-- **API REST locale** — Serveur HTTP local pour piloter l'application depuis d'autres logiciels
+- **Export TIFF multi-pages** — Exporter un document multi-pages au format TIFF en plus du PDF
+- **Support des codes-barres** — Detection et decodage automatique des codes-barres et QR codes dans les documents
+- **Mode sombre adaptatif** — Ajuster automatiquement le contraste de la previsualisation selon l'heure de la journee
+- **Raccourcis personnalisables** — Permettre a l'utilisateur de redefinir les raccourcis clavier
+- **Statistiques de numerisation** — Dashboard avec nombre de pages numerisees, espace utilise, types de documents
+- **Export vers Notion / Obsidian** — Integration directe avec les outils de prise de notes
+- **Compression intelligente** — Reduire la taille des PDF en optimisant les images selon le contenu (texte vs photo)
+- **Import depuis camera** — Utiliser la webcam ou un appareil photo connecte comme source de numerisation
+- **Synchronisation multi-postes** — Synchroniser la configuration et l'historique entre plusieurs installations via un fichier partage
 
 <br/>
 

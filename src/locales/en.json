@@ -73,7 +73,14 @@
     "previewing": "Previewing...",
     "importing": "Importing...",
     "importComplete": "{{count}} page(s) imported",
-    "importError": "Import error: {{error}}"
+    "importError": "Import error: {{error}}",
+    "vaultError": "Vault error: {{error}}",
+    "vaultAdded": "Document added to vault",
+    "undone": "Action undone",
+    "emailing": "Sending email...",
+    "emailSent": "Email sent",
+    "redactionApplied": "Redaction applied",
+    "tableSaved": "Table copied to clipboard"
   },
   "dropzone": {
     "title": "Drop your files here",
@@ -107,7 +114,12 @@
     "ocrTooltip": "Optical character recognition (OCR)",
     "analyzeTooltip": "Smart analysis (classification + extraction)",
     "apply": "Apply",
-    "close": "Close"
+    "close": "Close",
+    "email": "Email",
+    "vault": "Vault",
+    "ai": "AI",
+    "stats": "Statistics",
+    "undo": "Undo"
   },
   "preview": {
     "tabPreview": "Preview",
@@ -207,7 +219,15 @@
     "rotate180": "Rotate 180°",
     "flipH": "Flip horizontally",
     "flipV": "Flip vertically",
-    "removeFromPages": "Remove from multipage"
+    "removeFromPages": "Remove from multipage",
+    "email": "Send by email",
+    "addToVault": "Add to vault",
+    "addWatermark": "Add watermark",
+    "editWatermark": "Edit watermark",
+    "removeWatermark": "Remove watermark",
+    "addSignature": "Add signature",
+    "editSignature": "Edit signature",
+    "removeSignature": "Remove signature"
   },
   "settings": {
     "title": "Settings",
@@ -243,7 +263,9 @@
     "ocrLanguage": "OCR language",
     "language": "Interface language",
     "cancel": "Cancel",
-    "save": "Save"
+    "save": "Save",
+    "groqApiKey": "Groq API Key",
+    "groqApiKeyDesc": "Required for AI features (summary, translation, etc.)"
   },
   "rules": {
     "title": "Automation Rules",
@@ -367,6 +389,74 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "close": "Close"
+  },
+  "export": {
+    "title": "Advanced PDF Export",
+    "pdfa": "PDF/A Compliance",
+    "pdfaNone": "None (standard PDF)",
+    "encryption": "Encryption",
+    "userPassword": "User password",
+    "ownerPassword": "Owner password",
+    "passwordPlaceholder": "Leave empty to disable",
+    "ownerPasswordPlaceholder": "Leave empty to disable",
+    "annotations": "Annotations",
+    "annotationCount": "{{count}} annotation(s) will be included",
+    "annotationHighlight": "Highlight",
+    "annotationEllipse": "Ellipse",
+    "annotationTextNote": "Text note",
+    "annotationClear": "Clear annotations",
+    "annotationTextPrompt": "Note text:",
+    "overlays": "Overlays",
+    "watermarkActive": "Active watermark: \"{{text}}\"",
+    "signaturePlaced": "Signature placed on document",
+    "integrity": "Integrity",
+    "integrityInfo": "A SHA-256 hash will be computed to verify document integrity.",
+    "exportBtn": "Export PDF",
+    "watermark": "Watermark",
+    "watermarkText": "Watermark text",
+    "watermarkTextPlaceholder": "e.g. CONFIDENTIAL",
+    "watermarkOpacity": "Opacity",
+    "watermarkRotation": "Rotation",
+    "watermarkPosition": "Position",
+    "watermarkFontSize": "Font size",
+    "watermarkColor": "Color",
+    "watermarkConfirm": "Apply watermark",
+    "positionDiagonal": "Diagonal",
+    "positionCenter": "Center",
+    "positionTopLeft": "Top left",
+    "positionTopRight": "Top right",
+    "positionBottomLeft": "Bottom left",
+    "positionBottomRight": "Bottom right",
+    "signatureTitle": "Signature",
+    "signatureDrawHint": "Draw your signature below or import an image.",
+    "signatureClear": "Clear",
+    "signatureImport": "Import image",
+    "signatureConfirm": "Confirm signature"
+  },
+  "vault": {
+    "title": "Vault",
+    "documents": "document(s)",
+    "filterPlaceholder": "Filter documents...",
+    "lock": "Lock",
+    "enterPassword": "Enter vault password",
+    "createPassword": "Create a vault password",
+    "passwordPlaceholder": "Password",
+    "unlock": "Unlock",
+    "noResults": "No documents found",
+    "empty": "The vault is empty"
+  },
+  "stats": {
+    "title": "Statistics",
+    "totalScans": "Total scans",
+    "totalExports": "Total exports",
+    "totalOcr": "Total OCR",
+    "totalPages": "Total scanned pages",
+    "formatsUsed": "Formats used"
+  },
+  "ai": {
+    "redactionTitle": "Sensitive data redaction",
+    "redactionDesc": "{{count}} sensitive item(s) detected. Redaction will irreversibly mask this information.",
+    "applyRedactions": "Apply redaction"
   },
   "update": {
     "available": "Update available",

@@ -29,6 +29,9 @@ pub fn is_portable() -> bool {
 
 // ─── Helpers ────────────────────────────────────────────────────
 
+/// Public accessor for the config directory.
+pub fn config_dir_pub() -> PathBuf { config_dir() }
+
 fn config_dir() -> PathBuf {
     if let Some(Some(portable)) = PORTABLE_DIR.get() {
         let _ = fs::create_dir_all(portable);
@@ -108,6 +111,9 @@ pub struct AppSettings {
     /// Whether the user has completed the onboarding wizard
     #[serde(default)]
     pub onboarding_complete: bool,
+    /// Groq API key for AI features
+    #[serde(default)]
+    pub groq_api_key: Option<String>,
 }
 
 fn default_language() -> String {
@@ -145,6 +151,7 @@ impl Default for AppSettings {
             scan_counter: 0,
             language: "fr".to_string(),
             onboarding_complete: false,
+            groq_api_key: None,
         }
     }
 }
