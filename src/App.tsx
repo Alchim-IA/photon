@@ -9,6 +9,7 @@ import { OnboardingWizard } from "./components/onboarding/OnboardingWizard";
 import { TourTooltip } from "./components/onboarding/TourTooltip";
 import { useTour } from "./components/onboarding/useTour";
 import { selectDirectory } from "./utils/selectDirectory";
+import { logger } from "./utils/debugLogger";
 import "./App.css";
 
 // ─── Components ──────────────────────────────────────────────────
@@ -35,6 +36,7 @@ import { StatsModal } from "./components/modals/StatsModal";
 import { WatermarkDialog } from "./components/modals/WatermarkDialog";
 import { SignatureDialog } from "./components/modals/SignatureDialog";
 import { RedactionModal } from "./components/modals/RedactionModal";
+import { DebugLogPanel } from "./components/DebugLogPanel";
 
 // ─── Types ───────────────────────────────────────────────────────
 import type {
@@ -224,6 +226,9 @@ function App() {
   const [showRedaction, setShowRedaction] = useState(false);
   const [sensitiveItems, setSensitiveItems] = useState<SensitiveInfo[]>([]);
 
+  // Debug panel
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+
   // v1.0: AI features
   const [aiSummary, setAiSummary] = useState("");
   const [aiTranslation, setAiTranslation] = useState("");
@@ -257,6 +262,12 @@ function App() {
   shortcutRef.current = { selectedDocument, selectedScanner, isScanning, saveAsPdf: () => saveAsPdf(), saveAsImage: () => saveAsImage(), startScan: () => startScan(), printDoc: () => printDoc(), runOcr: () => runOcr(), setRightPanelMode };
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // F12 toggles debug panel
+      if (e.key === "F12") {
+        e.preventDefault();
+        setShowDebugPanel((v) => !v);
+        return;
+      }
       const meta = e.metaKey || e.ctrlKey;
       if (!meta) return;
       const s = shortcutRef.current;
@@ -283,14 +294,17 @@ function App() {
     setIsRefreshing(true);
     setStatusMessage(t("status.searchingScanners"));
     setStatusType("scanning");
+    logger.info("Scanners", "Recherche de scanners...");
     try {
       const list = await invoke<ScannerDevice[]>("list_scanners");
       setScanners(list);
       if (list.length > 0 && !selectedScanner) setSelectedScanner(list[0].id);
+      logger.info("Scanners", `${list.length} scanner(s) détecté(s)`, list.map((s) => `${s.vendor} ${s.name} (${s.id})`).join(", "));
       setStatusMessage(list.length > 0 ? t("status.scannersFound", { count: list.length }) : t("status.noScanners"));
       setStatusType("ready");
     } catch (err) {
       setScanners([]);
+      logger.error("Scanners", "Échec de la recherche de scanners", extractError(err));
       setStatusMessage(t("status.error", { error: String(err) }));
       setStatusType("error");
     } finally {
@@ -300,6 +314,7 @@ function App() {
 
   // ── Initial load ──
   useEffect(() => {
+    logger.info("App", "Initialisation de l'application...");
     loadScanners();
     invoke<AppSettings>("load_settings")
       .then((s) => {
@@ -307,15 +322,16 @@ function App() {
         setConfig((c) => ({ ...c, dpi: s.default_dpi, colorMode: s.default_color_mode, paperFormat: s.default_paper_format }));
         if (s.language) setLanguage(s.language as Language);
         if (!s.onboarding_complete) setShowOnboarding(true);
+        logger.info("App", "Paramètres chargés", `Format: ${s.default_format}, DPI: ${s.default_dpi}, Langue: ${s.language}`);
       })
-      .catch(() => {});
+      .catch((err) => { logger.error("App", "Échec du chargement des paramètres", extractError(err)); });
     invoke<string>("get_documents_dir")
       .then((dir) => setSettings((s) => ({ ...s, output_dir: dir })))
-      .catch(() => {});
-    invoke<ScanProfile[]>("list_scan_profiles").then(setScanProfiles).catch(() => {});
-    invoke<TagDefinition[]>("get_tag_definitions").then(setTagDefinitions).catch(() => {});
-    invoke<Record<string, string[]>>("get_all_tags_map").then(setDocumentTags).catch(() => {});
-    invoke<AutomationRule[]>("list_automation_rules").then(setAutomationRules).catch(() => {});
+      .catch((err) => { logger.warn("App", "Impossible de récupérer le dossier documents", extractError(err)); });
+    invoke<ScanProfile[]>("list_scan_profiles").then(setScanProfiles).catch((err) => { logger.warn("App", "Échec chargement profils", extractError(err)); });
+    invoke<TagDefinition[]>("get_tag_definitions").then(setTagDefinitions).catch((err) => { logger.warn("App", "Échec chargement tags", extractError(err)); });
+    invoke<Record<string, string[]>>("get_all_tags_map").then(setDocumentTags).catch((err) => { logger.warn("App", "Échec chargement map tags", extractError(err)); });
+    invoke<AutomationRule[]>("list_automation_rules").then(setAutomationRules).catch((err) => { logger.warn("App", "Échec chargement règles", extractError(err)); });
     setStatusMessage(t("status.ready"));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -340,6 +356,7 @@ function App() {
     setIsImporting(true);
     setStatusMessage(t("status.importing"));
     setStatusType("scanning");
+    logger.info("Import", `Importation de ${validPaths.length} fichier(s)`, validPaths.join(", "));
 
     const allNewDocs: ScannedDocument[] = [];
 
@@ -349,7 +366,9 @@ function App() {
         const newDocs: ScannedDocument[] = results.map((r) => dtoToDoc(r));
         setDocuments((prev) => [...prev, ...newDocs]);
         allNewDocs.push(...newDocs);
+        logger.debug("Import", `Importé: ${filePath.split(/[/\\]/).pop()} (${results.length} page(s))`);
       } catch (err) {
+        logger.error("Import", `Échec import: ${filePath.split(/[/\\]/).pop()}`, extractError(err));
         setStatusMessage(t("status.importError", { error: String(err) }));
         setStatusType("error");
       }
@@ -410,6 +429,7 @@ function App() {
     setScanProgress(0);
     setStatusMessage(t("status.scanning"));
     setStatusType("scanning");
+    logger.info("Scan", `Numérisation lancée`, `Scanner: ${selectedScanner}, DPI: ${config.dpi}, Mode: ${config.colorMode}, Format: ${config.paperFormat}`);
     const progressInterval = setInterval(() => { setScanProgress((p) => (p >= 95 ? p : p + Math.random() * 8)); }, 300);
     try {
       const result = await invoke<ScanResultDto>("scan_document", {
@@ -421,11 +441,13 @@ function App() {
       setDocuments((docs) => [newDoc, ...docs]);
       setSelectedDocument(newDoc);
       setActiveView("preview");
+      logger.info("Scan", `Numérisation terminée: ${result.name}`, `ID: ${result.id}, Dimensions: ${result.width}x${result.height}`);
       setStatusMessage(t("status.scanComplete"));
       setStatusType("ready");
     } catch (err) {
       clearInterval(progressInterval);
       setScanProgress(0);
+      logger.error("Scan", "Échec de la numérisation", extractError(err));
       setStatusMessage(t("status.error", { error: String(err) }));
       setStatusType("error");
     } finally {
@@ -444,10 +466,13 @@ function App() {
       if (!path) return;
       setStatusMessage(t("status.savingPdf"));
       setStatusType("scanning");
+      logger.info("Export", `Sauvegarde PDF: ${path}`);
       await invoke<string>("save_document_as_pdf", { docId: selectedDocument.id, outputPath: path });
+      logger.info("Export", `PDF sauvegardé avec succès: ${path.split(/[/\\]/).pop()}`);
       setStatusMessage(t("status.pdfSaved", { filename: path.split(/[/\\]/).pop() ?? "" }));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Export", "Échec sauvegarde PDF", extractError(err));
       setStatusMessage(t("status.pdfError", { error: String(err) }));
       setStatusType("error");
     }
@@ -467,6 +492,7 @@ function App() {
         if (!path) return;
         setStatusMessage(t("status.saving"));
         setStatusType("scanning");
+        logger.info("Export", `Sauvegarde images multi-pages (${multipageDoc.page_count} pages)`, `Format: ${fmt}, Chemin: ${path}`);
         const detectedFormat = path.split(".").pop()?.toUpperCase() || "PNG";
         const dir = path.replace(/[/\\][^/\\]+$/, "");
         for (let i = 0; i < multipageDoc.page_ids.length; i++) {
@@ -474,9 +500,11 @@ function App() {
           const pagePath = i === 0 ? path : `${dir}/${baseName}_page${i + 1}.${ext}`;
           await invoke<string>("save_document_as_image", { docId: pageId, outputPath: pagePath, format: detectedFormat, quality: settings.quality });
         }
+        logger.info("Export", `${multipageDoc.page_count} images sauvegardées`);
         setStatusMessage(t("status.imageSaved", { filename: `${multipageDoc.page_count} pages` }));
         setStatusType("ready");
       } catch (err) {
+        logger.error("Export", "Échec sauvegarde images multi-pages", extractError(err));
         setStatusMessage(t("status.saveError", { error: String(err) }));
         setStatusType("error");
       }
@@ -494,10 +522,13 @@ function App() {
       setStatusMessage(t("status.saving"));
       setStatusType("scanning");
       const detectedFormat = path.split(".").pop()?.toUpperCase() || "PNG";
+      logger.info("Export", `Sauvegarde image: ${path}`, `Format: ${detectedFormat}, Qualité: ${settings.quality}`);
       await invoke<string>("save_document_as_image", { docId: selectedDocument.id, outputPath: path, format: detectedFormat, quality: settings.quality });
+      logger.info("Export", `Image sauvegardée: ${path.split(/[/\\]/).pop()}`);
       setStatusMessage(t("status.imageSaved", { filename: path.split(/[/\\]/).pop() ?? "" }));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Export", "Échec sauvegarde image", extractError(err));
       setStatusMessage(t("status.saveError", { error: String(err) }));
       setStatusType("error");
     }
@@ -509,10 +540,13 @@ function App() {
       try {
         setStatusMessage(t("status.printing"));
         setStatusType("scanning");
+        logger.info("Print", `Impression multi-pages (${multipageDoc.page_count} pages)`);
         await invoke("print_multipage_document", { multipageId: multipageDoc.id });
+        logger.info("Print", "Impression multi-pages envoyée");
         setStatusMessage(t("status.printed"));
         setStatusType("ready");
       } catch (err) {
+        logger.error("Print", "Échec impression multi-pages", extractError(err));
         setStatusMessage(t("status.printError", { error: String(err) }));
         setStatusType("error");
       }
@@ -521,10 +555,13 @@ function App() {
     if (!selectedDocument) return;
     try {
       setStatusMessage(t("status.printing"));
+      logger.info("Print", `Impression: ${selectedDocument.name}`);
       await invoke("print_document", { docId: selectedDocument.id });
+      logger.info("Print", "Impression envoyée");
       setStatusMessage(t("status.printed"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Print", "Échec impression", extractError(err));
       setStatusMessage(t("status.printError", { error: String(err) }));
       setStatusType("error");
     }
@@ -536,13 +573,16 @@ function App() {
     try {
       setStatusMessage(t("status.cropping"));
       setStatusType("scanning");
+      logger.info("Processing", `Recadrage auto: ${selectedDocument.name}`);
       const result = await invoke<ScanResultDto>("auto_crop_document", { docId: selectedDocument.id });
       const updated = dtoToDoc(result);
       setSelectedDocument(updated);
       setDocuments((docs) => docs.map((d) => (d.id === updated.id ? updated : d)));
+      logger.info("Processing", `Recadrage terminé: ${result.width}x${result.height}`);
       setStatusMessage(t("status.cropComplete"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Processing", "Échec recadrage auto", extractError(err));
       setStatusMessage(t("status.cropError", { error: String(err) }));
       setStatusType("error");
     }
@@ -560,13 +600,16 @@ function App() {
     setIsOcrRunning(true);
     setStatusMessage(t("status.ocrRunning"));
     setStatusType("scanning");
+    logger.info("OCR", `OCR lancé: ${selectedDocument.name}`, `Langue: ${settings.default_ocr_lang}`);
     try {
       const text = await invoke<string>("run_ocr", { docId: selectedDocument.id, lang: settings.default_ocr_lang });
       setOcrText(text);
       setActiveView("ocr");
+      logger.info("OCR", `OCR terminé: ${text.length} caractères extraits`);
       setStatusMessage(t("status.ocrComplete"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("OCR", "Échec OCR", extractError(err));
       setStatusMessage(t("status.ocrError", { error: String(err) }));
       setStatusType("error");
     } finally {
@@ -578,9 +621,11 @@ function App() {
     if (!ocrText) return;
     try {
       await navigator.clipboard.writeText(ocrText);
+      logger.debug("OCR", "Texte copié dans le presse-papier");
       setStatusMessage(t("status.textCopied"));
       setStatusType("ready");
-    } catch {
+    } catch (err) {
+      logger.error("OCR", "Échec copie texte", extractError(err));
       setStatusMessage(t("status.copyError"));
       setStatusType("error");
     }
@@ -598,11 +643,14 @@ function App() {
   const handleSaveSettings = async () => {
     try {
       const updatedSettings = { ...settings, language };
+      logger.info("Settings", "Sauvegarde des paramètres...");
       await invoke("save_app_settings", { settings: updatedSettings });
+      logger.info("Settings", "Paramètres sauvegardés");
       setShowSettings(false);
       setStatusMessage(t("status.settingsSaved"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Settings", "Échec sauvegarde paramètres", extractError(err));
       setStatusMessage(t("status.settingsError", { error: String(err) }));
       setStatusType("error");
     }
@@ -663,6 +711,7 @@ function App() {
     setScanProgress(0);
     setStatusMessage(t("status.batchScanning", { count: batchPageCount }));
     setStatusType("scanning");
+    logger.info("Scan", `Numérisation par lot lancée (${batchPageCount} pages)`, `Scanner: ${selectedScanner}`);
     const progressInterval = setInterval(() => { setScanProgress((p) => (p >= 95 ? p : p + Math.random() * 3)); }, 500);
     try {
       const results = await invoke<ScanResultDto[]>("batch_scan", {
@@ -674,11 +723,13 @@ function App() {
       const newDocs = results.map(dtoToDoc);
       setDocuments((docs) => [...newDocs.reverse(), ...docs]);
       if (newDocs.length > 0) { setSelectedDocument(newDocs[0]); setActiveView("preview"); }
+      logger.info("Scan", `Lot terminé: ${results.length} page(s) numérisées`);
       setStatusMessage(t("status.batchDone", { count: results.length }));
       setStatusType("ready");
     } catch (err) {
       clearInterval(progressInterval);
       setScanProgress(0);
+      logger.error("Scan", "Échec numérisation par lot", extractError(err));
       setStatusMessage(t("status.batchError", { error: String(err) }));
       setStatusType("error");
     } finally {
@@ -722,6 +773,7 @@ function App() {
       setIsAnalyzing(true);
       setStatusMessage(t("status.analyzing"));
       setStatusType("scanning");
+      logger.info("Intelligence", `Analyse du document: ${selectedDocument.name}`);
       const result = await invoke<AnalysisResultDto>("analyze_document", { docId: selectedDocument.id });
       setAnalysisResult(result);
       if (result.auto_tags.length > 0) {
@@ -732,9 +784,11 @@ function App() {
       }
       setRightPanelMode("intelligence");
       const docTypeLabel = t(`docTypes.${result.classification.doc_type}`) || result.classification.doc_type;
+      logger.info("Intelligence", `Analyse terminée: ${docTypeLabel} (${Math.round(result.classification.confidence * 100)}%)`, `Tags: ${result.auto_tags.join(", ") || "aucun"}, Règles: ${result.rule_results.length}`);
       setStatusMessage(t("status.analysisDone", { type: docTypeLabel, confidence: Math.round(result.classification.confidence * 100) }));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Intelligence", "Échec analyse document", extractError(err));
       setStatusMessage(t("status.analysisError", { error: String(err) }));
       setStatusType("error");
     } finally {
@@ -820,6 +874,7 @@ function App() {
     try {
       setStatusMessage(t("status.rotating", { deg: direction }));
       setStatusType("scanning");
+      logger.debug("Processing", `Rotation ${direction}° du document ${docId}`);
       const result = await invoke<ScanResultDto>("rotate_document", { docId, direction });
       const updated = dtoToDoc(result);
       if (selectedDocument?.id === updated.id) setSelectedDocument(updated);
@@ -827,6 +882,7 @@ function App() {
       setStatusMessage(t("status.rotateComplete", { deg: direction }));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Processing", `Échec rotation ${direction}°`, extractError(err));
       setStatusMessage(t("status.rotateError", { error: String(err) }));
       setStatusType("error");
     }
@@ -838,6 +894,7 @@ function App() {
     try {
       setStatusMessage(t("status.flipping"));
       setStatusType("scanning");
+      logger.debug("Processing", `Retournement ${axis} du document ${docId}`);
       const result = await invoke<ScanResultDto>("flip_document", { docId, axis });
       const updated = dtoToDoc(result);
       if (selectedDocument?.id === updated.id) setSelectedDocument(updated);
@@ -845,6 +902,7 @@ function App() {
       setStatusMessage(t("status.flipComplete"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Processing", `Échec retournement ${axis}`, extractError(err));
       setStatusMessage(t("status.flipError", { error: String(err) }));
       setStatusType("error");
     }
@@ -877,14 +935,17 @@ function App() {
     try {
       setStatusMessage(t("status.adjusting"));
       setStatusType("scanning");
+      logger.info("Processing", `Application ajustements`, `Luminosité: ${adjustments.brightness}, Contraste: ${adjustments.contrast}, Saturation: ${adjustments.saturation}, Netteté: ${adjustments.sharpness}`);
       const result = await invoke<ScanResultDto>("commit_adjustments", { docId: selectedDocument.id, adjustments });
       const updated = dtoToDoc(result);
       setSelectedDocument(updated);
       setDocuments((docs) => docs.map((d) => (d.id === updated.id ? updated : d)));
       setAdjustments({ brightness: 0, contrast: 0, saturation: 0, sharpness: 0 });
+      logger.info("Processing", "Ajustements appliqués");
       setStatusMessage(t("status.adjustmentsApplied"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Processing", "Échec application ajustements", extractError(err));
       setStatusMessage(t("status.adjustmentsError", { error: String(err) }));
       setStatusType("error");
     }
@@ -893,6 +954,7 @@ function App() {
   const revertAdjustments = async () => {
     if (!selectedDocument) return;
     try {
+      logger.debug("Processing", "Annulation des ajustements");
       const result = await invoke<ScanResultDto>("revert_adjustments", { docId: selectedDocument.id });
       const updated = dtoToDoc(result);
       setSelectedDocument(updated);
@@ -901,6 +963,7 @@ function App() {
       setStatusMessage(t("status.adjustmentsCancelled"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Processing", "Échec annulation ajustements", extractError(err));
       setStatusMessage(t("status.error", { error: String(err) }));
       setStatusType("error");
     }
@@ -912,13 +975,16 @@ function App() {
     try {
       setStatusMessage(t("status.denoising"));
       setStatusType("scanning");
+      logger.info("Processing", `Débruitage (force: ${strength})`, `Document: ${selectedDocument.name}`);
       const result = await invoke<ScanResultDto>("denoise_document", { docId: selectedDocument.id, strength });
       const updated = dtoToDoc(result);
       setSelectedDocument(updated);
       setDocuments((docs) => docs.map((d) => (d.id === updated.id ? updated : d)));
+      logger.info("Processing", "Débruitage terminé");
       setStatusMessage(t("status.denoiseComplete"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Processing", "Échec débruitage", extractError(err));
       setStatusMessage(t("status.denoiseError", { error: String(err) }));
       setStatusType("error");
     }
@@ -929,13 +995,16 @@ function App() {
     try {
       setStatusMessage(t("status.deskewing"));
       setStatusType("scanning");
+      logger.info("Processing", `Redressement: ${selectedDocument.name}`);
       const result = await invoke<ScanResultDto>("deskew_document", { docId: selectedDocument.id });
       const updated = dtoToDoc(result);
       setSelectedDocument(updated);
       setDocuments((docs) => docs.map((d) => (d.id === updated.id ? updated : d)));
+      logger.info("Processing", "Redressement terminé");
       setStatusMessage(t("status.deskewComplete"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Processing", "Échec redressement", extractError(err));
       setStatusMessage(t("status.deskewError", { error: String(err) }));
       setStatusType("error");
     }
@@ -946,13 +1015,16 @@ function App() {
     try {
       setStatusMessage(t("status.whitening"));
       setStatusType("scanning");
+      logger.info("Processing", `Blanchiment fond: ${selectedDocument.name}`);
       const result = await invoke<ScanResultDto>("whiten_document_background", { docId: selectedDocument.id, threshold: 200 });
       const updated = dtoToDoc(result);
       setSelectedDocument(updated);
       setDocuments((docs) => docs.map((d) => (d.id === updated.id ? updated : d)));
+      logger.info("Processing", "Blanchiment terminé");
       setStatusMessage(t("status.whiteningComplete"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Processing", "Échec blanchiment fond", extractError(err));
       setStatusMessage(t("status.whiteningError", { error: String(err) }));
       setStatusType("error");
     }
@@ -1221,6 +1293,8 @@ function App() {
         signature,
       };
 
+      logger.info("Export", `Export PDF avancé: ${path}`, `PDF/A: ${exportPdfa}, Chiffrement: ${exportUserPassword ? "oui" : "non"}, Filigrane: ${watermark ? "oui" : "non"}, Signature: ${signature ? "oui" : "non"}, Annotations: ${pageAnnotations.length > 0 ? pageAnnotations[0].annotations.length : 0}`);
+
       let result: PdfSaveResult;
       if (multipageDoc && multipageDoc.page_count > 0) {
         result = await invoke<PdfSaveResult>("export_multipage_pdf_advanced", {
@@ -1240,9 +1314,11 @@ function App() {
 
       setLastExportHash(result.sha256);
       setShowExportDialog(false);
+      logger.info("Export", `PDF exporté: ${path.split(/[/\\]/).pop()}`, result.sha256 ? `SHA-256: ${result.sha256}` : undefined);
       setStatusMessage(t("status.pdfSaved", { filename: path.split(/[/\\]/).pop() ?? "" }));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Export", "Échec export PDF avancé", extractError(err));
       setStatusMessage(t("status.pdfError", { error: extractError(err) }));
       setStatusType("error");
     }
@@ -1261,10 +1337,13 @@ function App() {
     try {
       setStatusMessage(t("status.emailing"));
       setStatusType("scanning");
+      logger.info("Email", `Envoi par email: ${id}`);
       await invoke("send_document_by_email", { docId: id });
+      logger.info("Email", "Email envoyé");
       setStatusMessage(t("status.emailSent"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("Email", "Échec envoi email", extractError(err));
       setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
@@ -1282,15 +1361,19 @@ function App() {
   const unlockVault = async () => {
     try {
       if (!vaultSetup) {
+        logger.info("Vault", "Configuration du mot de passe du coffre-fort");
         await invoke("vault_set_password", { password: vaultPassword });
         setVaultSetup(true);
       }
+      logger.info("Vault", "Déverrouillage du coffre-fort");
       await invoke("vault_unlock", { password: vaultPassword });
       setVaultUnlocked(true);
       const docs = await invoke<VaultDocument[]>("vault_list_documents");
       setVaultDocs(docs);
       setVaultPassword("");
+      logger.info("Vault", `Coffre-fort déverrouillé: ${docs.length} document(s)`);
     } catch (err) {
+      logger.error("Vault", "Échec déverrouillage coffre-fort", extractError(err));
       setStatusMessage(t("status.vaultError", { error: extractError(err) }));
       setStatusType("error");
     }
@@ -1383,11 +1466,14 @@ function App() {
   const aiOcr = async () => {
     if (!selectedDocument) return;
     setIsAiLoading(true);
+    logger.info("AI", `OCR IA lancé: ${selectedDocument.name}`);
     try {
       const text = await invoke<string>("groq_ocr", { docId: selectedDocument.id });
       setOcrText(text);
       setActiveView("ocr");
+      logger.info("AI", `OCR IA terminé: ${text.length} caractères`);
     } catch (err) {
+      logger.error("AI", "Échec OCR IA", extractError(err));
       setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     } finally {
@@ -1398,10 +1484,13 @@ function App() {
   const aiSummarize = async () => {
     if (!selectedDocument) return;
     setIsAiLoading(true);
+    logger.info("AI", `Résumé IA lancé: ${selectedDocument.name}`);
     try {
       const summary = await invoke<string>("groq_summarize", { docId: selectedDocument.id });
       setAiSummary(summary);
+      logger.info("AI", `Résumé généré: ${summary.length} caractères`);
     } catch (err) {
+      logger.error("AI", "Échec résumé IA", extractError(err));
       setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     } finally {
@@ -1412,10 +1501,13 @@ function App() {
   const aiTranslate = async () => {
     if (!selectedDocument) return;
     setIsAiLoading(true);
+    logger.info("AI", `Traduction IA lancée vers ${aiTargetLang}`);
     try {
       const translation = await invoke<string>("groq_translate", { docId: selectedDocument.id, targetLang: aiTargetLang });
       setAiTranslation(translation);
+      logger.info("AI", `Traduction terminée: ${translation.length} caractères`);
     } catch (err) {
+      logger.error("AI", "Échec traduction IA", extractError(err));
       setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     } finally {
@@ -1425,11 +1517,14 @@ function App() {
 
   const detectSensitive = async () => {
     if (!selectedDocument) return;
+    logger.info("AI", `Détection données sensibles: ${selectedDocument.name}`);
     try {
       const items = await invoke<SensitiveInfo[]>("detect_sensitive_info", { docId: selectedDocument.id });
       setSensitiveItems(items);
       if (items.length > 0) setShowRedaction(true);
+      logger.info("AI", `${items.length} élément(s) sensible(s) détecté(s)`);
     } catch (err) {
+      logger.error("AI", "Échec détection données sensibles", extractError(err));
       setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
@@ -1437,10 +1532,13 @@ function App() {
 
   const detectTables = async () => {
     if (!selectedDocument) return;
+    logger.info("AI", `Détection tableaux: ${selectedDocument.name}`);
     try {
       const tables = await invoke<DetectedTable[]>("detect_tables", { docId: selectedDocument.id });
       setDetectedTables(tables);
+      logger.info("AI", `${tables.length} tableau(x) détecté(s)`);
     } catch (err) {
+      logger.error("AI", "Échec détection tableaux", extractError(err));
       setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
@@ -1448,10 +1546,13 @@ function App() {
 
   const semanticSearch = async () => {
     if (!semanticQuery.trim()) return;
+    logger.debug("Search", `Recherche sémantique: "${semanticQuery}"`);
     try {
       const results = await invoke<SemanticResult[]>("semantic_search", { query: semanticQuery });
       setSemanticResults(results);
+      logger.debug("Search", `${results.length} résultat(s) trouvé(s)`);
     } catch (err) {
+      logger.error("Search", "Échec recherche sémantique", extractError(err));
       setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
@@ -1459,6 +1560,7 @@ function App() {
 
   const applyRedactions = async () => {
     if (!selectedDocument || sensitiveItems.length === 0) return;
+    logger.info("AI", `Application caviardage: ${sensitiveItems.length} élément(s)`);
     try {
       const result = await invoke<ScanResultDto>("apply_redactions", { docId: selectedDocument.id, items: sensitiveItems });
       const updated = dtoToDoc(result);
@@ -1466,9 +1568,11 @@ function App() {
       setDocuments((docs) => docs.map((d) => (d.id === updated.id ? updated : d)));
       setShowRedaction(false);
       setSensitiveItems([]);
+      logger.info("AI", "Caviardage appliqué");
       setStatusMessage(t("status.redactionApplied"));
       setStatusType("ready");
     } catch (err) {
+      logger.error("AI", "Échec caviardage", extractError(err));
       setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
@@ -1756,6 +1860,8 @@ function App() {
           scanProgress={scanProgress}
           isScanning={isScanning}
           isAdjusting={isAdjusting}
+          onToggleDebug={() => setShowDebugPanel((v) => !v)}
+          showDebugPanel={showDebugPanel}
         />
       </main>
 
@@ -1902,6 +2008,9 @@ function App() {
         onRemoveDocument={vaultRemoveDocument}
         onOpenDocument={vaultOpenDocument}
       />
+
+      {/* Debug Log Panel */}
+      <DebugLogPanel show={showDebugPanel} onClose={() => setShowDebugPanel(false)} />
 
       {/* Onboarding Wizard */}
       {showOnboarding && <OnboardingWizard onComplete={handleOnboardingComplete} />}
