@@ -6,16 +6,78 @@ use crate::scanner::*;
 
 #[cfg(windows)]
 use std::ffi::c_void;
+
+// ─── Raw Win32 FFI declarations ─────────────────────────────────
+// We declare these directly to avoid windows crate API version issues.
+
 #[cfg(windows)]
-use std::sync::{Arc, Mutex};
+extern "system" {
+    fn LoadLibraryW(lpLibFileName: *const u16) -> *mut c_void;
+    fn GetProcAddress(hModule: *mut c_void, lpProcName: *const u8) -> *mut c_void;
+    fn GlobalLock(hMem: *mut c_void) -> *mut c_void;
+    fn GlobalUnlock(hMem: *mut c_void) -> i32;
+    fn GlobalSize(hMem: *mut c_void) -> usize;
+    fn GlobalFree(hMem: *mut c_void) -> *mut c_void;
+    fn CreateWindowExW(
+        dwExStyle: u32,
+        lpClassName: *const u16,
+        lpWindowName: *const u16,
+        dwStyle: u32,
+        x: i32, y: i32, nWidth: i32, nHeight: i32,
+        hWndParent: isize,
+        hMenu: isize,
+        hInstance: *mut c_void,
+        lpParam: *mut c_void,
+    ) -> isize;
+    fn DestroyWindow(hWnd: isize) -> i32;
+    fn DefWindowProcW(hWnd: isize, msg: u32, wParam: usize, lParam: isize) -> isize;
+    fn RegisterClassExW(lpWndClass: *const WndClassExW) -> u16;
+    fn PeekMessageW(lpMsg: *mut Msg, hWnd: isize, wMsgFilterMin: u32, wMsgFilterMax: u32, wRemoveMsg: u32) -> i32;
+    fn TranslateMessage(lpMsg: *const Msg) -> i32;
+    fn DispatchMessageW(lpMsg: *const Msg) -> isize;
+}
+
 #[cfg(windows)]
-use windows::Win32::Foundation::*;
+#[repr(C)]
+struct WndClassExW {
+    cb_size: u32,
+    style: u32,
+    lpfn_wnd_proc: unsafe extern "system" fn(isize, u32, usize, isize) -> isize,
+    cb_cls_extra: i32,
+    cb_wnd_extra: i32,
+    h_instance: *mut c_void,
+    h_icon: *mut c_void,
+    h_cursor: *mut c_void,
+    hbr_background: *mut c_void,
+    lpsz_menu_name: *const u16,
+    lpsz_class_name: *const u16,
+    h_icon_sm: *mut c_void,
+}
+
 #[cfg(windows)]
-use windows::Win32::System::LibraryLoader::*;
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Msg {
+    hwnd: isize,
+    message: u32,
+    w_param: usize,
+    l_param: isize,
+    time: u32,
+    pt_x: i32,
+    pt_y: i32,
+}
+
 #[cfg(windows)]
-use windows::Win32::UI::WindowsAndMessaging::*;
+impl Default for Msg {
+    fn default() -> Self {
+        unsafe { std::mem::zeroed() }
+    }
+}
+
 #[cfg(windows)]
-use windows::core::*;
+const HWND_MESSAGE: isize = -3;
+#[cfg(windows)]
+const PM_REMOVE: u32 = 0x0001;
 
 // ─── TWAIN Constants ─────────────────────────────────────────────
 
@@ -33,7 +95,6 @@ mod tw {
     pub const DAT_IMAGEINFO: u16 = 0x0101;
     pub const DAT_IMAGENATIVEXFER: u16 = 0x0104;
     pub const DAT_PENDINGXFERS: u16 = 0x0005;
-    pub const DAT_STATUS: u16 = 0x0008;
 
     // MSG (Messages)
     pub const MSG_GET: u16 = 0x0001;
@@ -51,8 +112,6 @@ mod tw {
 
     // Return codes
     pub const TWRC_SUCCESS: u16 = 0;
-    pub const TWRC_FAILURE: u16 = 1;
-    pub const TWRC_ENDOFLIST: u16 = 7;
     pub const TWRC_XFERDONE: u16 = 0;
 
     // Capabilities
@@ -96,10 +155,6 @@ impl TwFix32 {
         let frac = ((val - whole as f64) * 65536.0) as u16;
         Self { whole, frac }
     }
-
-    fn to_f64(self) -> f64 {
-        self.whole as f64 + self.frac as f64 / 65536.0
-    }
 }
 
 #[cfg(windows)]
@@ -142,7 +197,7 @@ impl TwIdentity {
         copy_str(&mut id.version.info, "1.0");
         id.protocol_major = 2;
         id.protocol_minor = 4;
-        id.supported_groups = tw::DG_APP2 | tw::DG_CONTROL as u32 | tw::DG_IMAGE as u32;
+        id.supported_groups = tw::DG_APP2 | tw::DG_CONTROL | tw::DG_IMAGE;
         copy_str(&mut id.manufacturer, "Photon");
         copy_str(&mut id.product_family, "Scanner");
         copy_str(&mut id.product_name, "Photon Scanner");
@@ -178,7 +233,7 @@ fn read_tw_str(buf: &[u8]) -> String {
 struct TwUserInterface {
     show_ui: i16,
     modal_ui: i16,
-    parent: isize, // HWND
+    parent: isize, // HWND as raw isize
 }
 
 #[cfg(windows)]
@@ -222,14 +277,6 @@ struct TwPendingXfers {
     _eoj: u32,
 }
 
-#[cfg(windows)]
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct TwStatus {
-    condition_code: u16,
-    _data: u16,
-}
-
 // ─── DSM Entry Function Type ────────────────────────────────────
 
 #[cfg(windows)]
@@ -248,17 +295,24 @@ pub struct TwainBackend {
     #[cfg(windows)]
     dsm_entry: Option<DsmEntryFn>,
     #[cfg(windows)]
-    _lib: Option<HMODULE>,
+    _lib: *mut c_void,
 }
+
+// SAFETY: TwainBackend only stores a function pointer and a DLL handle.
+// The DSM entry function is thread-safe when called with proper session management.
+// The DLL handle is never mutated after construction.
+#[cfg(windows)]
+unsafe impl Send for TwainBackend {}
+#[cfg(windows)]
+unsafe impl Sync for TwainBackend {}
 
 impl TwainBackend {
     pub fn new() -> Self {
         #[cfg(windows)]
         {
-            // Try loading TWAINDSM.dll (new DSM) then twain_32.dll (legacy)
             let (entry, lib) = load_dsm("TWAINDSM.dll")
                 .or_else(|| load_dsm("twain_32.dll"))
-                .unwrap_or((None, None));
+                .unwrap_or((None, std::ptr::null_mut()));
 
             if entry.is_some() {
                 log::info!("TWAIN DSM chargé avec succès");
@@ -277,14 +331,19 @@ impl TwainBackend {
 }
 
 #[cfg(windows)]
-fn load_dsm(dll_name: &str) -> Option<(Option<DsmEntryFn>, Option<HMODULE>)> {
+fn load_dsm(dll_name: &str) -> Option<(Option<DsmEntryFn>, *mut c_void)> {
     unsafe {
         let dll_wide: Vec<u16> = dll_name.encode_utf16().chain(std::iter::once(0)).collect();
-        let lib = LoadLibraryW(PCWSTR(dll_wide.as_ptr())).ok()?;
-        let proc_name = s!("DSM_Entry");
-        let proc = GetProcAddress(lib, proc_name)?;
+        let lib = LoadLibraryW(dll_wide.as_ptr());
+        if lib.is_null() {
+            return None;
+        }
+        let proc = GetProcAddress(lib, b"DSM_Entry\0".as_ptr());
+        if proc.is_null() {
+            return None;
+        }
         let entry: DsmEntryFn = std::mem::transmute(proc);
-        Some((Some(entry), Some(lib)))
+        Some((Some(entry), lib))
     }
 }
 
@@ -294,7 +353,7 @@ fn load_dsm(dll_name: &str) -> Option<(Option<DsmEntryFn>, Option<HMODULE>)> {
 struct TwainSession {
     dsm_entry: DsmEntryFn,
     app_id: TwIdentity,
-    hwnd: HWND,
+    hwnd: isize,
     dsm_open: bool,
 }
 
@@ -303,31 +362,45 @@ impl TwainSession {
     fn new(dsm_entry: DsmEntryFn) -> Result<Self, ScannerError> {
         // Create a hidden message-only window for TWAIN
         let hwnd = unsafe {
-            let class_name = w!("PhotonTwainHidden");
-            let wc = WNDCLASSEXW {
-                cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-                lpfnWndProc: Some(DefWindowProcW),
-                lpszClassName: class_name,
-                ..std::mem::zeroed()
+            let class_name: Vec<u16> = "PhotonTwainHidden\0".encode_utf16().collect();
+            let wc = WndClassExW {
+                cb_size: std::mem::size_of::<WndClassExW>() as u32,
+                style: 0,
+                lpfn_wnd_proc: DefWindowProcW,
+                cb_cls_extra: 0,
+                cb_wnd_extra: 0,
+                h_instance: std::ptr::null_mut(),
+                h_icon: std::ptr::null_mut(),
+                h_cursor: std::ptr::null_mut(),
+                hbr_background: std::ptr::null_mut(),
+                lpsz_menu_name: std::ptr::null(),
+                lpsz_class_name: class_name.as_ptr(),
+                h_icon_sm: std::ptr::null_mut(),
             };
             RegisterClassExW(&wc);
-            CreateWindowExW(
-                WINDOW_EX_STYLE::default(),
-                class_name,
-                w!("Photon TWAIN"),
-                WS_OVERLAPPEDWINDOW,
+
+            let title: Vec<u16> = "Photon TWAIN\0".encode_utf16().collect();
+            let h = CreateWindowExW(
+                0,
+                class_name.as_ptr(),
+                title.as_ptr(),
+                0, // no style
                 0, 0, 0, 0,
                 HWND_MESSAGE,
-                None,
-                None,
-                None,
-            )
-            .map_err(|e| ScannerError::SystemError(format!("Fenêtre TWAIN: {}", e)))?
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            if h == 0 {
+                return Err(ScannerError::SystemError("Fenêtre TWAIN: création échouée".to_string()));
+            }
+            h
         };
 
         let mut app_id = TwIdentity::app_identity();
 
         // Open DSM
+        let mut hwnd_val = hwnd;
         let rc = unsafe {
             (dsm_entry)(
                 &mut app_id,
@@ -335,12 +408,12 @@ impl TwainSession {
                 tw::DG_CONTROL,
                 tw::DAT_PARENT,
                 tw::MSG_OPENDSM,
-                &mut hwnd.0 as *mut isize as *mut c_void,
+                &mut hwnd_val as *mut isize as *mut c_void,
             )
         };
 
         if rc != tw::TWRC_SUCCESS {
-            unsafe { let _ = DestroyWindow(hwnd); }
+            unsafe { DestroyWindow(hwnd); }
             return Err(ScannerError::SystemError(format!("TWAIN DSM_Open: rc={}", rc)));
         }
 
@@ -441,7 +514,6 @@ impl TwainSession {
             tw::MSG_SET,
             &mut cap as *mut _ as *mut c_void,
         );
-        // Free the container
         if !cap.container.is_null() {
             unsafe { let _ = Box::from_raw(cap.container as *mut TwOneValue); }
         }
@@ -475,9 +547,9 @@ impl TwainSession {
 
     fn enable_source_no_ui(&mut self, source: &mut TwIdentity) -> Result<(), ScannerError> {
         let mut ui = TwUserInterface {
-            show_ui: 0, // No UI
+            show_ui: 0,
             modal_ui: 0,
-            parent: self.hwnd.0,
+            parent: self.hwnd,
         };
         let rc = self.call(
             source,
@@ -498,7 +570,7 @@ impl TwainSession {
         let mut ui = TwUserInterface {
             show_ui: 0,
             modal_ui: 0,
-            parent: self.hwnd.0,
+            parent: self.hwnd,
         };
         self.call(
             source,
@@ -540,13 +612,10 @@ impl TwainSession {
             return Err(ScannerError::SystemError("TWAIN: handle DIB nul".to_string()));
         }
 
-        // Convert DIB handle to image bytes
         let data = unsafe { dib_handle_to_bmp(handle as *mut c_void) };
 
         // Free the DIB handle
-        unsafe {
-            windows::Win32::System::Memory::GlobalFree(windows::Win32::Foundation::HGLOBAL(handle as *mut c_void));
-        }
+        unsafe { GlobalFree(handle as *mut c_void); }
 
         data
     }
@@ -560,7 +629,6 @@ impl TwainSession {
             tw::MSG_ENDXFER,
             &mut pending as *mut _ as *mut c_void,
         );
-        // Reset if more pending
         if pending.count != 0 {
             self.call(
                 source,
@@ -577,7 +645,7 @@ impl TwainSession {
 impl Drop for TwainSession {
     fn drop(&mut self) {
         if self.dsm_open {
-            let mut hwnd_val = self.hwnd.0;
+            let mut hwnd_val = self.hwnd;
             unsafe {
                 (self.dsm_entry)(
                     &mut self.app_id,
@@ -587,7 +655,7 @@ impl Drop for TwainSession {
                     tw::MSG_CLOSEDSM,
                     &mut hwnd_val as *mut isize as *mut c_void,
                 );
-                let _ = DestroyWindow(self.hwnd);
+                DestroyWindow(self.hwnd);
             }
         }
     }
@@ -597,16 +665,14 @@ impl Drop for TwainSession {
 
 #[cfg(windows)]
 unsafe fn dib_handle_to_bmp(handle: *mut c_void) -> Result<Vec<u8>, ScannerError> {
-    use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
-
-    let ptr = GlobalLock(HGLOBAL(handle));
+    let ptr = GlobalLock(handle);
     if ptr.is_null() {
         return Err(ScannerError::SystemError("TWAIN: GlobalLock échoué".to_string()));
     }
 
-    let size = GlobalSize(HGLOBAL(handle));
+    let size = GlobalSize(handle);
     if size == 0 {
-        GlobalUnlock(HGLOBAL(handle));
+        GlobalUnlock(handle);
         return Err(ScannerError::SystemError("TWAIN: taille DIB nulle".to_string()));
     }
 
@@ -637,25 +703,23 @@ unsafe fn dib_handle_to_bmp(handle: *mut c_void) -> Result<Vec<u8>, ScannerError
     } else {
         0
     };
-    let palette_size = palette_entries * 4; // RGBQUAD = 4 bytes
+    let palette_size = palette_entries * 4;
 
     let pixel_offset = header_size + palette_size;
-    let file_size = 14 + dib_data.len() as u32; // 14 = BITMAPFILEHEADER size
+    let file_size = 14 + dib_data.len() as u32;
 
-    // Build BMP file
     let mut bmp = Vec::with_capacity(file_size as usize);
 
     // BITMAPFILEHEADER (14 bytes)
-    bmp.extend_from_slice(b"BM");                              // bfType
-    bmp.extend_from_slice(&file_size.to_le_bytes());           // bfSize
-    bmp.extend_from_slice(&0u16.to_le_bytes());                // bfReserved1
-    bmp.extend_from_slice(&0u16.to_le_bytes());                // bfReserved2
-    bmp.extend_from_slice(&(14 + pixel_offset).to_le_bytes()); // bfOffBits
+    bmp.extend_from_slice(b"BM");
+    bmp.extend_from_slice(&file_size.to_le_bytes());
+    bmp.extend_from_slice(&0u16.to_le_bytes());
+    bmp.extend_from_slice(&0u16.to_le_bytes());
+    bmp.extend_from_slice(&(14 + pixel_offset).to_le_bytes());
 
-    // Append the DIB data (header + palette + pixels)
     bmp.extend_from_slice(dib_data);
 
-    GlobalUnlock(HGLOBAL(handle));
+    GlobalUnlock(handle);
 
     Ok(bmp)
 }
@@ -663,12 +727,12 @@ unsafe fn dib_handle_to_bmp(handle: *mut c_void) -> Result<Vec<u8>, ScannerError
 // ─── ScannerBackend Implementation ──────────────────────────────
 
 impl ScannerBackend for TwainBackend {
-    fn list_devices(&self) -> std::result::Result<Vec<ScannerDevice>, ScannerError> {
+    fn list_devices(&self) -> Result<Vec<ScannerDevice>, ScannerError> {
         #[cfg(windows)]
         {
             let dsm_entry = match self.dsm_entry {
                 Some(e) => e,
-                None => return Ok(Vec::new()), // No TWAIN DSM available
+                None => return Ok(Vec::new()),
             };
 
             let mut session = TwainSession::new(dsm_entry)?;
@@ -697,13 +761,12 @@ impl ScannerBackend for TwainBackend {
         }
     }
 
-    fn scan(&self, options: ScanOptions) -> std::result::Result<ScanResult, ScannerError> {
+    fn scan(&self, options: ScanOptions) -> Result<ScanResult, ScannerError> {
         #[cfg(windows)]
         {
             let dsm_entry = self.dsm_entry
-                .ok_or_else(|| ScannerError::NoDriver)?;
+                .ok_or(ScannerError::NoDriver)?;
 
-            // Parse TWAIN device ID
             let source_id: u32 = options.device_id
                 .strip_prefix("twain://")
                 .and_then(|s| s.parse().ok())
@@ -711,26 +774,21 @@ impl ScannerBackend for TwainBackend {
 
             let mut session = TwainSession::new(dsm_entry)?;
 
-            // Find the source by ID
             let sources = session.enumerate_sources();
             let mut source = sources
                 .into_iter()
                 .find(|s| s.id == source_id)
                 .ok_or(ScannerError::NoDeviceFound)?;
 
-            // Open the source
             session.open_source(&mut source)?;
 
             // Set capabilities
-            // Units = inches (required for resolution)
             session.set_capability_u16(&mut source, tw::ICAP_UNITS, tw::TWUN_INCHES);
 
-            // Resolution
             let dpi = options.dpi as f64;
             session.set_capability_fix32(&mut source, tw::ICAP_XRESOLUTION, dpi);
             session.set_capability_fix32(&mut source, tw::ICAP_YRESOLUTION, dpi);
 
-            // Color mode
             let pixel_type = match color_mode_id(&options.color_mode) {
                 1 => tw::TWPT_RGB,
                 2 => tw::TWPT_GRAY,
@@ -738,30 +796,24 @@ impl ScannerBackend for TwainBackend {
                 _ => tw::TWPT_RGB,
             };
             session.set_capability_u16(&mut source, tw::ICAP_PIXELTYPE, pixel_type);
-
-            // Transfer count = 1
             session.set_capability_u16(&mut source, tw::CAP_XFERCOUNT, 1);
 
-            // Duplex / ADF
             if options.duplex {
                 session.set_capability_u16(&mut source, tw::CAP_FEEDERENABLED, 1);
                 session.set_capability_u16(&mut source, tw::CAP_DUPLEXENABLED, 1);
             }
 
-            // Enable source without UI
             if let Err(e) = session.enable_source_no_ui(&mut source) {
                 session.close_source(&mut source);
                 return Err(e);
             }
 
-            // Process Windows messages to let TWAIN work
-            // TWAIN needs message pump for state transitions
+            // Message pump for TWAIN state transitions
             unsafe {
-                let mut msg = MSG::default();
+                let mut msg = Msg::default();
                 let start = std::time::Instant::now();
                 let timeout = std::time::Duration::from_secs(30);
 
-                // Pump messages until transfer is ready or timeout
                 loop {
                     if start.elapsed() > timeout {
                         session.disable_source(&mut source);
@@ -769,22 +821,19 @@ impl ScannerBackend for TwainBackend {
                         return Err(ScannerError::SystemError("TWAIN: timeout en attente du scanner".to_string()));
                     }
 
-                    while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
-                        let _ = TranslateMessage(&msg);
+                    while PeekMessageW(&mut msg, 0, 0, 0, PM_REMOVE) != 0 {
+                        TranslateMessage(&msg);
                         DispatchMessageW(&msg);
                     }
 
-                    // Small sleep to avoid busy-waiting
                     std::thread::sleep(std::time::Duration::from_millis(50));
 
-                    // Try to get image info - if it succeeds, transfer is ready
                     if session.get_image_info(&mut source).is_ok() {
                         break;
                     }
                 }
             }
 
-            // Perform native transfer
             let bmp_data = match session.native_transfer(&mut source) {
                 Ok(data) => data,
                 Err(e) => {
@@ -795,12 +844,10 @@ impl ScannerBackend for TwainBackend {
                 }
             };
 
-            // End transfer and clean up
             session.end_transfer(&mut source);
             session.disable_source(&mut source);
             session.close_source(&mut source);
 
-            // Decode BMP and convert to PNG
             let img = ::image::load_from_memory(&bmp_data)
                 .map_err(|e| ScannerError::SystemError(format!("TWAIN: décodage image: {}", e)))?;
 
