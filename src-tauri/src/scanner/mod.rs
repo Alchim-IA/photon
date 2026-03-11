@@ -2,6 +2,7 @@ pub mod wia;
 pub mod ica;
 pub mod sane;
 pub mod escl;
+pub mod twain;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -81,15 +82,76 @@ pub trait ScannerBackend: Send + Sync {
 }
 
 /// Returns the platform-appropriate scanner backend.
+/// On Windows, returns a combined WIA + TWAIN backend.
 pub fn get_backend() -> Box<dyn ScannerBackend + Send + Sync> {
     #[cfg(windows)]
-    return Box::new(wia::WiaBackend::new());
+    return Box::new(CombinedWindowsBackend::new());
     #[cfg(target_os = "macos")]
     return Box::new(escl::EsclBackend::new());
     #[cfg(target_os = "linux")]
     return Box::new(sane::SaneBackend::new());
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     panic!("Plateforme non supportée");
+}
+
+// ─── Combined Windows Backend (WIA + TWAIN) ─────────────────────
+
+#[cfg(windows)]
+struct CombinedWindowsBackend {
+    wia: wia::WiaBackend,
+    twain: twain::TwainBackend,
+}
+
+#[cfg(windows)]
+impl CombinedWindowsBackend {
+    fn new() -> Self {
+        Self {
+            wia: wia::WiaBackend::new(),
+            twain: twain::TwainBackend::new(),
+        }
+    }
+}
+
+#[cfg(windows)]
+impl ScannerBackend for CombinedWindowsBackend {
+    fn list_devices(&self) -> Result<Vec<ScannerDevice>, ScannerError> {
+        let mut devices = Vec::new();
+
+        // WIA devices first
+        match self.wia.list_devices() {
+            Ok(wia_devices) => devices.extend(wia_devices),
+            Err(e) => log::warn!("WIA énumération échouée: {}", e),
+        }
+
+        // Then TWAIN devices (skip duplicates by name)
+        match self.twain.list_devices() {
+            Ok(twain_devices) => {
+                for td in twain_devices {
+                    // Check if a WIA device with the same base name already exists
+                    let base_name = td.name.trim_end_matches(" (TWAIN)");
+                    let is_duplicate = devices.iter().any(|d| {
+                        d.name.contains(base_name) || base_name.contains(&d.name)
+                    });
+                    if !is_duplicate {
+                        devices.push(td);
+                    } else {
+                        log::debug!("TWAIN: source '{}' ignorée (doublon WIA)", td.name);
+                    }
+                }
+            }
+            Err(e) => log::debug!("TWAIN énumération échouée: {}", e),
+        }
+
+        Ok(devices)
+    }
+
+    fn scan(&self, options: ScanOptions) -> Result<ScanResult, ScannerError> {
+        if options.device_id.starts_with("twain://") {
+            self.twain.scan(options)
+        } else {
+            self.wia.scan(options)
+        }
+    }
 }
 
 /// Paper format dimensions in mm (width, height).
