@@ -462,5 +462,19 @@
     "available": "Update available",
     "install": "Install",
     "installing": "Installing…"
+  },
+  "debug": {
+    "title": "Debug Log",
+    "close": "Close",
+    "minimize": "Minimize",
+    "expand": "Expand",
+    "clear": "Clear logs",
+    "export": "Export logs",
+    "allLevels": "All levels",
+    "filterSource": "Filter by source...",
+    "autoScroll": "Auto-scroll",
+    "noLogs": "No logs",
+    "entries": "{{count}} / {{total}} entries",
+    "openDebug": "Open debug log"
   }
 }

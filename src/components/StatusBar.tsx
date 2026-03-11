@@ -1,4 +1,7 @@
+import { useState, useEffect } from "react";
 import { useTranslation } from "../contexts/LanguageContext";
+import { logger, type LogEntry } from "../utils/debugLogger";
+import Icons from "./Icons";
 
 interface StatusBarProps {
   statusMessage: string;
@@ -6,6 +9,8 @@ interface StatusBarProps {
   scanProgress: number;
   isScanning: boolean;
   isAdjusting?: boolean;
+  onToggleDebug: () => void;
+  showDebugPanel: boolean;
 }
 
 export function StatusBar({
@@ -14,9 +19,22 @@ export function StatusBar({
   scanProgress,
   isScanning,
   isAdjusting,
+  onToggleDebug,
+  showDebugPanel,
 }: StatusBarProps) {
   const { t } = useTranslation();
   const clampedProgress = Math.round(Math.min(scanProgress, 100));
+  const [errorCount, setErrorCount] = useState(0);
+
+  useEffect(() => {
+    setErrorCount(logger.getEntries().filter((e) => e.level === "error").length);
+    const unsub = logger.subscribe((entry: LogEntry) => {
+      if (entry.level === "error") {
+        setErrorCount((c) => c + 1);
+      }
+    });
+    return unsub;
+  }, []);
 
   return (
     <div className="status-bar" role="status">
@@ -47,6 +65,14 @@ export function StatusBar({
           <span className="progress-text">{clampedProgress}%</span>
         </>
       )}
+      <button
+        className={`debug-toggle-btn ${showDebugPanel ? "active" : ""}`}
+        onClick={onToggleDebug}
+        title={`${t("debug.openDebug")} (F12)`}
+      >
+        {Icons.bug}
+        {errorCount > 0 && <span className="debug-badge debug-badge-error">{errorCount}</span>}
+      </button>
     </div>
   );
 }

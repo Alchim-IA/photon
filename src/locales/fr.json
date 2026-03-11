@@ -462,5 +462,19 @@
     "available": "Mise à jour disponible",
     "install": "Installer",
     "installing": "Installation…"
+  },
+  "debug": {
+    "title": "Journal de debug",
+    "close": "Fermer",
+    "minimize": "Réduire",
+    "expand": "Agrandir",
+    "clear": "Effacer les logs",
+    "export": "Exporter les logs",
+    "allLevels": "Tous les niveaux",
+    "filterSource": "Filtrer par source...",
+    "autoScroll": "Auto-scroll",
+    "noLogs": "Aucun log",
+    "entries": "{{count}} / {{total}} entrées",
+    "openDebug": "Ouvrir le journal de debug"
   }
 }
