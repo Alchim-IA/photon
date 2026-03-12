@@ -92,6 +92,8 @@ unsafe fn write_wia_property_i32(
 fn find_scanner_item(root: &IWiaItem2) -> Result<IWiaItem2> {
     unsafe {
         let enumerator = root.EnumChildItems(None)?;
+        let mut first_child: Option<IWiaItem2> = None;
+
         loop {
             let mut item: Option<IWiaItem2> = None;
             let mut fetched: u32 = 0;
@@ -104,13 +106,28 @@ fn find_scanner_item(root: &IWiaItem2) -> Result<IWiaItem2> {
                     let storage: IWiaPropertyStorage = item.cast()?;
                     read_wia_property_i32(&storage, WIA_IPA_ITEM_FLAGS).unwrap_or(0)
                 };
-                // WiaItemTypeTransfer | WiaItemTypeImage
-                if (item_type & 0x8) != 0 {
+                log::debug!("WIA: élément enfant trouvé, flags=0x{:08X}", item_type);
+
+                // WiaItemTypeTransfer=0x8, WiaItemTypeImage=0x2, WiaItemTypeProgrammableDataSource=0x200
+                if (item_type & 0x8) != 0 || (item_type & 0x2) != 0 {
                     return Ok(item);
+                }
+                // Keep first child as fallback
+                if first_child.is_none() {
+                    first_child = Some(item);
                 }
             }
         }
-        Err(Error::from(E_FAIL))
+
+        // Fallback: return first child item if any (some scanners don't set standard flags)
+        if let Some(child) = first_child {
+            log::warn!("WIA: aucun élément avec flags standard, utilisation du premier enfant");
+            return Ok(child);
+        }
+
+        // Last resort: try the root device itself (some flatbed scanners expose transfer on root)
+        log::warn!("WIA: aucun élément enfant, tentative avec le périphérique racine");
+        Ok(root.clone())
     }
 }
 
@@ -200,7 +217,7 @@ impl ScannerBackend for WiaBackend {
                     .map_err(|e| ScannerError::SystemError(format!("Connexion au scanner: {}", e)))?;
 
                 let scanner_item = find_scanner_item(&device)
-                    .map_err(|_| ScannerError::SystemError("Aucun élément scanner trouvé".to_string()))?;
+                    .map_err(|e| ScannerError::SystemError(format!("Aucun élément scanner trouvé: {}", e)))?;
 
                 let (paper_w, paper_h) = paper_dimensions(&options.paper_format);
                 let width_px = mm_to_pixels(paper_w, options.dpi) as i32;
