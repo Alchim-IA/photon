@@ -1,6 +1,6 @@
 [package]
 name = "document-scanner"
-version = "1.0.0"
+version = "1.0.1"
 description = "Scanner de Documents - Application de numérisation"
 authors = ["you"]
 edition = "2021"

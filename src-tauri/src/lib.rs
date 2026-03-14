@@ -111,12 +111,21 @@ struct PdfSaveResult {
 
 #[tauri::command]
 async fn list_scanners() -> Result<Vec<ScannerDevice>, ScannerError> {
-    tokio::task::spawn_blocking(|| {
+    log::info!("[CMD] list_scanners: appelé");
+    let result = tokio::task::spawn_blocking(|| {
         let backend = scanner::get_backend();
         backend.list_devices()
     })
     .await
-    .map_err(|e| ScannerError::SystemError(format!("Thread join: {}", e)))?
+    .map_err(|e| {
+        log::error!("[CMD] list_scanners: thread join échoué: {}", e);
+        ScannerError::SystemError(format!("Thread join: {}", e))
+    })?;
+    match &result {
+        Ok(devices) => log::info!("[CMD] list_scanners: {} scanner(s) trouvé(s)", devices.len()),
+        Err(e) => log::error!("[CMD] list_scanners: erreur: {:?}", e),
+    }
+    result
 }
 
 #[tauri::command]
@@ -124,13 +133,21 @@ async fn scan_document(
     options: ScanOptions,
     state: tauri::State<'_, AppState>,
 ) -> Result<ScanResultDto, ScannerError> {
+    log::info!(
+        "[CMD] scan_document: device_id='{}', dpi={}, color='{}', duplex={}, paper='{}'",
+        options.device_id, options.dpi, options.color_mode, options.duplex, options.paper_format
+    );
     let opts = options.clone();
     let result = tokio::task::spawn_blocking(move || {
         let backend = scanner::get_backend();
         backend.scan(opts)
     })
     .await
-    .map_err(|e| ScannerError::SystemError(format!("Thread join: {}", e)))??;
+    .map_err(|e| {
+        log::error!("[CMD] scan_document: thread join échoué: {}", e);
+        ScannerError::SystemError(format!("Thread join: {}", e))
+    })??;
+    log::info!("[CMD] scan_document: scan réussi, image {}x{}, {} octets", result.width, result.height, result.image_data.len());
 
     // Apply auto-crop if enabled
     let settings = state.settings.lock().unwrap().clone();
@@ -1815,18 +1832,24 @@ async fn batch_scan(
     page_count: usize,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ScanResultDto>, ScannerError> {
+    log::info!("[CMD] batch_scan: {} pages demandées, device='{}'", page_count, options.device_id);
     let mut results = Vec::new();
 
     let settings = state.settings.lock().unwrap().clone();
 
     for i in 0..page_count {
+        log::info!("[CMD] batch_scan: page {}/{}", i + 1, page_count);
         let opts = options.clone();
         let scan_result = tokio::task::spawn_blocking(move || {
             let backend = scanner::get_backend();
             backend.scan(opts)
         })
         .await
-        .map_err(|e| ScannerError::SystemError(format!("Thread join: {}", e)))??;
+        .map_err(|e| {
+            log::error!("[CMD] batch_scan: page {} thread join échoué: {}", i + 1, e);
+            ScannerError::SystemError(format!("Thread join: {}", e))
+        })??;
+        log::info!("[CMD] batch_scan: page {} scannée OK, {}x{} px", i + 1, scan_result.width, scan_result.height);
 
         let final_data = if settings.auto_crop {
             processing::auto_crop(&scan_result.image_data).unwrap_or(scan_result.image_data.clone())
@@ -3400,10 +3423,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_log::Builder::new()
-                .level(log::LevelFilter::Info)
-                .max_file_size(5_000_000) // 5 MB rotation
+                .level(log::LevelFilter::Debug)
+                .max_file_size(10_000_000) // 10 MB rotation
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
                 .target(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout))
+                .target(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: Some("photon.log".into()) }))
                 .build(),
         )
         .manage(AppState {

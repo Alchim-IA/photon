@@ -235,7 +235,8 @@
       "general": "General",
       "scan": "Scanning",
       "export": "Export",
-      "app": "Application"
+      "app": "Application",
+      "about": "About"
     },
     "output": "Output",
     "outputDir": "Output folder",
@@ -462,6 +463,20 @@
     "available": "Update available",
     "install": "Install",
     "installing": "Installing…"
+  },
+  "about": {
+    "description": "Smart document scanning application. Scan, organize and export your documents with ease.",
+    "changelog": "Changelog",
+    "madeBy": "Made with care by Alchim-IA",
+    "v101": {
+      "wiaFix": "Fixed WIA scanner on Windows (data not retrieved from stream)",
+      "errorMessages": "Readable error messages (no more [object Object])",
+      "debugLogs": "Detailed diagnostic logs for WIA scanner",
+      "aboutPage": "Added About page with version history"
+    },
+    "v100": {
+      "initial": "Initial release — scanning, OCR, PDF export, multi-page, vault, AI"
+    }
   },
   "debug": {
     "title": "Debug Log",

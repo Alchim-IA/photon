@@ -31,7 +31,7 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const { t } = useTranslation();
   const [settingsTab, setSettingsTab] = useState<
-    "general" | "scan" | "export" | "app"
+    "general" | "scan" | "export" | "app" | "about"
   >("general");
   const closeHandler = useCallback(() => onClose(), [onClose]);
   const modalRef = useFocusTrap(show, closeHandler);
@@ -57,7 +57,7 @@ export function SettingsModal({
               <span id="settings-title" className="settings-title">
                 {t("settings.title")}
               </span>
-              <div className="settings-version">Photon v1.0.0</div>
+              <div className="settings-version">Photon v1.0.1</div>
             </div>
           </div>
           <button
@@ -70,7 +70,7 @@ export function SettingsModal({
         </div>
 
         <div className="settings-tabs" role="tablist">
-          {(["general", "scan", "export", "app"] as const).map((tab) => (
+          {(["general", "scan", "export", "app", "about"] as const).map((tab) => (
             <button
               key={tab}
               role="tab"
@@ -402,6 +402,39 @@ export function SettingsModal({
                 />
               </div>
             </>
+          )}
+
+          {settingsTab === "about" && (
+            <div className="settings-about">
+              <div className="settings-about-logo">
+                <img src="/logo.svg" alt="Photon" style={{ width: 64, height: 64 }} />
+              </div>
+              <h2 className="settings-about-name">Photon</h2>
+              <div className="settings-about-version">v1.0.1</div>
+              <p className="settings-about-desc">{t("about.description")}</p>
+              <div className="settings-about-changelog">
+                <div className="settings-about-changelog-title">{t("about.changelog")}</div>
+                <div className="settings-about-entry">
+                  <span className="settings-about-badge">v1.0.1</span>
+                  <ul>
+                    <li>{t("about.v101.wiaFix")}</li>
+                    <li>{t("about.v101.errorMessages")}</li>
+                    <li>{t("about.v101.debugLogs")}</li>
+                    <li>{t("about.v101.aboutPage")}</li>
+                  </ul>
+                </div>
+                <div className="settings-about-entry">
+                  <span className="settings-about-badge">v1.0.0</span>
+                  <ul>
+                    <li>{t("about.v100.initial")}</li>
+                  </ul>
+                </div>
+              </div>
+              <div className="settings-about-footer">
+                <span>{t("about.madeBy")}</span>
+                <a href="https://github.com/Alchim-IA/photon" target="_blank" rel="noopener noreferrer" className="settings-about-link">GitHub</a>
+              </div>
+            </div>
           )}
         </div>
 

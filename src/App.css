@@ -1653,6 +1653,87 @@ body {
   border-top: 1px solid var(--glass-border-1);
 }
 
+/* === ABOUT SECTION === */
+.settings-about {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-md);
+  padding: var(--gap-lg) 0;
+}
+.settings-about-logo {
+  opacity: 0.9;
+}
+.settings-about-name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0;
+}
+.settings-about-version {
+  font-size: 0.95rem;
+  color: var(--accent);
+  font-weight: 600;
+  background: rgba(34, 211, 167, 0.1);
+  padding: 2px 12px;
+  border-radius: 12px;
+}
+.settings-about-desc {
+  color: var(--text-2);
+  text-align: center;
+  max-width: 400px;
+  line-height: 1.5;
+  margin: 0;
+}
+.settings-about-changelog {
+  width: 100%;
+  margin-top: var(--gap-md);
+}
+.settings-about-changelog-title {
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: var(--gap-sm);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.settings-about-entry {
+  margin-bottom: var(--gap-md);
+}
+.settings-about-badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(34, 211, 167, 0.1);
+  padding: 1px 8px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+.settings-about-entry ul {
+  margin: 4px 0 0 0;
+  padding-left: 20px;
+  color: var(--text-2);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.settings-about-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+  margin-top: var(--gap-md);
+  color: var(--text-3);
+  font-size: 0.85rem;
+}
+.settings-about-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+.settings-about-link:hover {
+  text-decoration: underline;
+}
+
 /* === QUALITY SLIDER === */
 .range-wrapper {
   display: flex;

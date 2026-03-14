@@ -305,7 +305,7 @@ function App() {
     } catch (err) {
       setScanners([]);
       logger.error("Scanners", "Échec de la recherche de scanners", extractError(err));
-      setStatusMessage(t("status.error", { error: String(err) }));
+      setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     } finally {
       setIsRefreshing(false);
@@ -369,7 +369,7 @@ function App() {
         logger.debug("Import", `Importé: ${filePath.split(/[/\\]/).pop()} (${results.length} page(s))`);
       } catch (err) {
         logger.error("Import", `Échec import: ${filePath.split(/[/\\]/).pop()}`, extractError(err));
-        setStatusMessage(t("status.importError", { error: String(err) }));
+        setStatusMessage(t("status.importError", { error: extractError(err) }));
         setStatusType("error");
       }
     }
@@ -448,7 +448,7 @@ function App() {
       clearInterval(progressInterval);
       setScanProgress(0);
       logger.error("Scan", "Échec de la numérisation", extractError(err));
-      setStatusMessage(t("status.error", { error: String(err) }));
+      setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     } finally {
       setTimeout(() => { setIsScanning(false); setScanProgress(0); }, 600);
@@ -473,7 +473,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Export", "Échec sauvegarde PDF", extractError(err));
-      setStatusMessage(t("status.pdfError", { error: String(err) }));
+      setStatusMessage(t("status.pdfError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -505,7 +505,7 @@ function App() {
         setStatusType("ready");
       } catch (err) {
         logger.error("Export", "Échec sauvegarde images multi-pages", extractError(err));
-        setStatusMessage(t("status.saveError", { error: String(err) }));
+        setStatusMessage(t("status.saveError", { error: extractError(err) }));
         setStatusType("error");
       }
       return;
@@ -529,7 +529,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Export", "Échec sauvegarde image", extractError(err));
-      setStatusMessage(t("status.saveError", { error: String(err) }));
+      setStatusMessage(t("status.saveError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -547,7 +547,7 @@ function App() {
         setStatusType("ready");
       } catch (err) {
         logger.error("Print", "Échec impression multi-pages", extractError(err));
-        setStatusMessage(t("status.printError", { error: String(err) }));
+        setStatusMessage(t("status.printError", { error: extractError(err) }));
         setStatusType("error");
       }
       return;
@@ -562,7 +562,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Print", "Échec impression", extractError(err));
-      setStatusMessage(t("status.printError", { error: String(err) }));
+      setStatusMessage(t("status.printError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -583,7 +583,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Processing", "Échec recadrage auto", extractError(err));
-      setStatusMessage(t("status.cropError", { error: String(err) }));
+      setStatusMessage(t("status.cropError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -610,7 +610,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("OCR", "Échec OCR", extractError(err));
-      setStatusMessage(t("status.ocrError", { error: String(err) }));
+      setStatusMessage(t("status.ocrError", { error: extractError(err) }));
       setStatusType("error");
     } finally {
       setIsOcrRunning(false);
@@ -651,7 +651,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Settings", "Échec sauvegarde paramètres", extractError(err));
-      setStatusMessage(t("status.settingsError", { error: String(err) }));
+      setStatusMessage(t("status.settingsError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -688,7 +688,7 @@ function App() {
       setStatusMessage(t("status.profileSaved", { name }));
       setStatusType("ready");
     } catch (err) {
-      setStatusMessage(t("status.profileError", { error: String(err) }));
+      setStatusMessage(t("status.profileError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -699,7 +699,7 @@ function App() {
       setScanProfiles(updated);
       if (selectedProfileId === profileId) setSelectedProfileId(null);
     } catch (err) {
-      setStatusMessage(t("status.error", { error: String(err) }));
+      setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -730,7 +730,7 @@ function App() {
       clearInterval(progressInterval);
       setScanProgress(0);
       logger.error("Scan", "Échec numérisation par lot", extractError(err));
-      setStatusMessage(t("status.batchError", { error: String(err) }));
+      setStatusMessage(t("status.batchError", { error: extractError(err) }));
       setStatusType("error");
     } finally {
       setTimeout(() => { setIsScanning(false); setScanProgress(0); }, 600);
@@ -747,7 +747,7 @@ function App() {
       setStatusMessage(t("status.renamed"));
       setStatusType("ready");
     } catch (err) {
-      setStatusMessage(t("status.error", { error: String(err) }));
+      setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -761,7 +761,7 @@ function App() {
       setStatusMessage(t("status.duplicated"));
       setStatusType("ready");
     } catch (err) {
-      setStatusMessage(t("status.error", { error: String(err) }));
+      setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -789,7 +789,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Intelligence", "Échec analyse document", extractError(err));
-      setStatusMessage(t("status.analysisError", { error: String(err) }));
+      setStatusMessage(t("status.analysisError", { error: extractError(err) }));
       setStatusType("error");
     } finally {
       setIsAnalyzing(false);
@@ -852,7 +852,7 @@ function App() {
       setStatusMessage(t("status.ruleSaved", { name: rule.name }));
       setStatusType("ready");
     } catch (err) {
-      setStatusMessage(t("status.error", { error: String(err) }));
+      setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -862,7 +862,7 @@ function App() {
       const updated = await invoke<AutomationRule[]>("delete_automation_rule", { ruleId });
       setAutomationRules(updated);
     } catch (err) {
-      setStatusMessage(t("status.error", { error: String(err) }));
+      setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -883,7 +883,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Processing", `Échec rotation ${direction}°`, extractError(err));
-      setStatusMessage(t("status.rotateError", { error: String(err) }));
+      setStatusMessage(t("status.rotateError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -903,7 +903,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Processing", `Échec retournement ${axis}`, extractError(err));
-      setStatusMessage(t("status.flipError", { error: String(err) }));
+      setStatusMessage(t("status.flipError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -946,7 +946,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Processing", "Échec application ajustements", extractError(err));
-      setStatusMessage(t("status.adjustmentsError", { error: String(err) }));
+      setStatusMessage(t("status.adjustmentsError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -964,7 +964,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Processing", "Échec annulation ajustements", extractError(err));
-      setStatusMessage(t("status.error", { error: String(err) }));
+      setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -985,7 +985,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Processing", "Échec débruitage", extractError(err));
-      setStatusMessage(t("status.denoiseError", { error: String(err) }));
+      setStatusMessage(t("status.denoiseError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -1005,7 +1005,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Processing", "Échec redressement", extractError(err));
-      setStatusMessage(t("status.deskewError", { error: String(err) }));
+      setStatusMessage(t("status.deskewError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -1025,7 +1025,7 @@ function App() {
       setStatusType("ready");
     } catch (err) {
       logger.error("Processing", "Échec blanchiment fond", extractError(err));
-      setStatusMessage(t("status.whiteningError", { error: String(err) }));
+      setStatusMessage(t("status.whiteningError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -1039,7 +1039,7 @@ function App() {
       setStatusMessage(t("status.pageAdded", { count: updated.page_count }));
       setStatusType("ready");
     } catch (err) {
-      setStatusMessage(t("status.error", { error: String(err) }));
+      setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -1050,7 +1050,7 @@ function App() {
       const updated = await invoke<MultiPageDocDto>("remove_page_from_document", { multipageId: multipageDoc.id, pageIndex });
       setMultipageDoc(updated);
     } catch (err) {
-      setStatusMessage(t("status.error", { error: String(err) }));
+      setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -1077,7 +1077,7 @@ function App() {
       setMultipageDoc(updated);
     } catch (err) {
       setMultipageDoc(previousDoc);
-      setStatusMessage(t("status.reorderError", { error: String(err) }));
+      setStatusMessage(t("status.reorderError", { error: extractError(err) }));
       setStatusType("error");
     }
   };
@@ -1093,7 +1093,7 @@ function App() {
       setStatusMessage(t("status.multipagePdfSaved", { filename: path.split(/[/\\]/).pop() ?? "" }));
       setStatusType("ready");
     } catch (err) {
-      setStatusMessage(t("status.error", { error: String(err) }));
+      setStatusMessage(t("status.error", { error: extractError(err) }));
       setStatusType("error");
     }
   };

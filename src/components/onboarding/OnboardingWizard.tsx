@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation, type Language } from "../../contexts/LanguageContext";
+import { extractError } from "../../types";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { selectDirectory } from "../../utils/selectDirectory";
 
@@ -112,7 +113,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
       setTestScanImage(`data:image/png;base64,${result.image_base64}`);
       setTestScanDone(true);
     } catch (err) {
-      setTestScanError(String(err));
+      setTestScanError(extractError(err));
       setTestScanDone(true);
     } finally {
       setIsScanning(false);

@@ -235,7 +235,8 @@
       "general": "Général",
       "scan": "Numérisation",
       "export": "Export",
-      "app": "Application"
+      "app": "Application",
+      "about": "À propos"
     },
     "output": "Sortie",
     "outputDir": "Dossier de destination",
@@ -462,6 +463,20 @@
     "available": "Mise à jour disponible",
     "install": "Installer",
     "installing": "Installation…"
+  },
+  "about": {
+    "description": "Application de numérisation intelligente. Scannez, organisez et exportez vos documents en toute simplicité.",
+    "changelog": "Historique des versions",
+    "madeBy": "Fait avec soin par Alchim-IA",
+    "v101": {
+      "wiaFix": "Correction du scanner WIA sous Windows (données non récupérées)",
+      "errorMessages": "Messages d'erreur lisibles (plus de [object Object])",
+      "debugLogs": "Logs de diagnostic détaillés pour le scanner WIA",
+      "aboutPage": "Ajout de la page À propos avec historique des versions"
+    },
+    "v100": {
+      "initial": "Version initiale — numérisation, OCR, export PDF, multi-pages, coffre-fort, IA"
+    }
   },
   "debug": {
     "title": "Journal de debug",
