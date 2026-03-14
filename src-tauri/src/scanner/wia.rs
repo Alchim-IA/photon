@@ -20,10 +20,19 @@ impl WiaBackend {
     pub fn new() -> Self {
         #[cfg(windows)]
         {
+            // Try STA first (required by some WIA drivers like Avision),
+            // fall back to MTA if STA fails (e.g. thread already MTA-initialized)
             let initialized = unsafe {
-                CoInitializeEx(None, COINIT_MULTITHREADED).is_ok()
+                let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+                if hr.is_ok() {
+                    log::info!("[WIA] Backend initialisé en STA (APARTMENTTHREADED)");
+                    true
+                } else {
+                    let hr2 = CoInitializeEx(None, COINIT_MULTITHREADED);
+                    log::info!("[WIA] Backend initialisé en MTA (MULTITHREADED), STA échoué: {:?}, MTA ok={}", hr, hr2.is_ok());
+                    hr2.is_ok()
+                }
             };
-            log::info!("[WIA] Backend initialisé, CoInitializeEx ok={}", initialized);
             Self { _initialized: initialized }
         }
         #[cfg(not(windows))]
@@ -127,7 +136,7 @@ impl ScannerBackend for WiaBackend {
         {
             log::info!("[WIA] list_devices: début de l'énumération des scanners");
             unsafe {
-                let dev_mgr: IWiaDevMgr2 = CoCreateInstance(&WiaDevMgr2, None, CLSCTX_LOCAL_SERVER)
+                let dev_mgr: IWiaDevMgr2 = CoCreateInstance(&WiaDevMgr2, None, CLSCTX_ALL)
                     .map_err(|e| {
                         log::error!("[WIA] list_devices: impossible de créer WIA Device Manager: {}", e);
                         ScannerError::SystemError(format!("Impossible de créer WIA Device Manager: {}", e))
@@ -247,7 +256,7 @@ impl ScannerBackend for WiaBackend {
                 options.device_id, options.dpi, options.color_mode, options.duplex, options.paper_format
             );
             unsafe {
-                let dev_mgr: IWiaDevMgr2 = CoCreateInstance(&WiaDevMgr2, None, CLSCTX_LOCAL_SERVER)
+                let dev_mgr: IWiaDevMgr2 = CoCreateInstance(&WiaDevMgr2, None, CLSCTX_ALL)
                     .map_err(|e| {
                         log::error!("[WIA] scan: WIA init échoué: {}", e);
                         ScannerError::SystemError(format!("WIA init: {}", e))
