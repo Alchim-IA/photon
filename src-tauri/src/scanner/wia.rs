@@ -135,16 +135,18 @@ fn find_scanner_item(root: &IWiaItem2) -> Result<IWiaItem2> {
 
         // Fallback: some scanners (older Kodak, WIA 1.0 compat) expose the root item
         // itself as the transfer-capable item — check if root has WiaItemTypeTransfer
-        let root_type = {
-            let storage: IWiaPropertyStorage = root.cast()?;
-            read_wia_property_i32(&storage, WIA_IPA_ITEM_FLAGS).unwrap_or(0)
-        };
-        log::info!("[WIA] find_scanner_item: vérification root item_type=0x{:08X}", root_type);
-
-        if (root_type & 0x8) != 0 {
-            log::info!("[WIA] find_scanner_item: root item est transférable (WIA 1.0 compat)");
-            // Clone the root by re-creating via device ID — root itself implements IWiaItem2
-            return Ok(root.clone());
+        match root.cast::<IWiaPropertyStorage>() {
+            Ok(storage) => {
+                let root_type = read_wia_property_i32(&storage, WIA_IPA_ITEM_FLAGS).unwrap_or(0);
+                log::info!("[WIA] find_scanner_item: vérification root item_type=0x{:08X}", root_type);
+                if (root_type & 0x8) != 0 {
+                    log::info!("[WIA] find_scanner_item: root item est transférable (WIA 1.0 compat)");
+                    return Ok(root.clone());
+                }
+            }
+            Err(e) => {
+                log::warn!("[WIA] find_scanner_item: cast root -> IWiaPropertyStorage échoué: {}", e);
+            }
         }
 
         // Last resort: try to use the first child item regardless of flags
@@ -160,8 +162,9 @@ fn find_scanner_item(root: &IWiaItem2) -> Result<IWiaItem2> {
             }
         }
 
-        log::error!("[WIA] find_scanner_item: aucun item transférable trouvé (ni enfant, ni root)");
-        Err(Error::from(E_FAIL))
+        // Absolute last resort: return root itself — some drivers work with direct transfer on root
+        log::warn!("[WIA] find_scanner_item: aucun item trouvé, tentative avec root directement");
+        Ok(root.clone())
     }
 }
 
@@ -229,7 +232,10 @@ impl ScannerBackend for WiaBackend {
 
                         let mut caps = ScannerCapabilities::default();
 
-                        match dev_mgr.CreateDevice(0, &BSTR::from(&id)) {
+                        let bstr_dev_id = BSTR::from(&id);
+                        match dev_mgr.CreateDevice(0, &bstr_dev_id)
+                            .or_else(|_| dev_mgr.CreateDevice(CLSCTX_LOCAL_SERVER.0 as i32, &bstr_dev_id))
+                        {
                             Ok(device) => {
                                 log::debug!("[WIA] list_devices: #{} CreateDevice OK", device_index);
                                 match find_scanner_item(&device) {
@@ -317,17 +323,22 @@ impl ScannerBackend for WiaBackend {
                     })?;
                 log::debug!("[WIA] scan: WIA Device Manager créé");
 
-                let device = dev_mgr.CreateDevice(0, &BSTR::from(&options.device_id))
+                let bstr_id = BSTR::from(&options.device_id);
+                let device = dev_mgr.CreateDevice(0, &bstr_id)
+                    .or_else(|e| {
+                        log::warn!("[WIA] scan: CreateDevice(0) échoué: {} — retry avec CLSCTX_LOCAL_SERVER flags", e);
+                        dev_mgr.CreateDevice(CLSCTX_LOCAL_SERVER.0 as i32, &bstr_id)
+                    })
                     .map_err(|e| {
-                        log::error!("[WIA] scan: CreateDevice échoué pour '{}': {}", options.device_id, e);
+                        log::error!("[WIA] scan: CreateDevice échoué pour '{}': 0x{:08X} {}", options.device_id, e.code().0 as u32, e);
                         ScannerError::SystemError(format!("Connexion au scanner: {}", e))
                     })?;
                 log::info!("[WIA] scan: connexion au scanner OK");
 
                 let scanner_item = find_scanner_item(&device)
                     .map_err(|e| {
-                        log::error!("[WIA] scan: find_scanner_item échoué: {}", e);
-                        ScannerError::SystemError("Aucun élément scanner trouvé".to_string())
+                        log::error!("[WIA] scan: find_scanner_item échoué: 0x{:08X} {}", e.code().0 as u32, e);
+                        ScannerError::SystemError(format!("Aucun élément scanner trouvé (0x{:08X})", e.code().0 as u32))
                     })?;
                 log::debug!("[WIA] scan: scanner item trouvé");
 
