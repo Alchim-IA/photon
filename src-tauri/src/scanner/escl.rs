@@ -314,6 +314,77 @@ fn extract_xml_values(xml: &str, tag: &str) -> Vec<String> {
 
 // ─── eSCL Scanning ──────────────────────────────────────────────
 
+/// Check ScannerStatus and cancel any stale/pending jobs that block new scans.
+fn cancel_stale_jobs(client: &reqwest::blocking::Client, base: &str) {
+    // Step A: Get scanner status
+    let status_url = format!("{}/ScannerStatus", base);
+    eprintln!("[eSCL] Checking scanner status: {}", status_url);
+
+    let status_resp = match client.get(&status_url).send() {
+        Ok(r) if r.status().is_success() => r.text().unwrap_or_default(),
+        Ok(r) => {
+            eprintln!("[eSCL] ScannerStatus returned {}, skipping cleanup", r.status());
+            return;
+        }
+        Err(e) => {
+            eprintln!("[eSCL] ScannerStatus request failed: {}, skipping cleanup", e);
+            return;
+        }
+    };
+
+    eprintln!("[eSCL] ScannerStatus:\n{}", status_resp);
+
+    // Check if scanner state indicates it's busy/processing
+    let state = extract_xml_values(&status_resp, "pwg:State")
+        .into_iter()
+        .chain(extract_xml_values(&status_resp, "State"))
+        .next()
+        .unwrap_or_default()
+        .to_lowercase();
+
+    eprintln!("[eSCL] Scanner state: {}", state);
+
+    if state != "processing" && state != "busy" && state != "stopped" {
+        // Scanner is idle, no cleanup needed
+        return;
+    }
+
+    // Step B: Extract job URIs from status and cancel them
+    let job_uris: Vec<String> = extract_xml_values(&status_resp, "pwg:JobUri")
+        .into_iter()
+        .chain(extract_xml_values(&status_resp, "JobUri"))
+        .collect();
+
+    if job_uris.is_empty() {
+        // No specific job URIs — try cancelling common job paths
+        // Some scanners use sequential job IDs starting at 1
+        for job_id in 1..=5 {
+            let job_url = format!("{}/ScanJobs/{}", base, job_id);
+            eprintln!("[eSCL] Attempting DELETE {}", job_url);
+            match client.delete(&job_url).send() {
+                Ok(r) => eprintln!("[eSCL] DELETE {} -> {}", job_url, r.status()),
+                Err(e) => eprintln!("[eSCL] DELETE {} failed: {}", job_url, e),
+            }
+        }
+    } else {
+        for uri in &job_uris {
+            let job_url = if uri.starts_with("http") {
+                uri.clone()
+            } else {
+                format!("http://{}", uri.trim_start_matches('/'))
+            };
+            eprintln!("[eSCL] Cancelling stale job: DELETE {}", job_url);
+            match client.delete(&job_url).send() {
+                Ok(r) => eprintln!("[eSCL] DELETE -> {}", r.status()),
+                Err(e) => eprintln!("[eSCL] DELETE failed: {}", e),
+            }
+        }
+    }
+
+    // Give the scanner a moment to release resources
+    std::thread::sleep(Duration::from_secs(2));
+}
+
 fn escl_scan(scanner: &EsclScanner, options: &ScanOptions) -> Result<ScanResult, ScannerError> {
     let base = format!("http://{}:{}{}", scanner.host, scanner.port, scanner.root);
     eprintln!("[eSCL] Starting scan on {}", base);
@@ -323,29 +394,60 @@ fn escl_scan(scanner: &EsclScanner, options: &ScanOptions) -> Result<ScanResult,
         .build()
         .map_err(|e| ScannerError::SystemError(format!("HTTP client: {}", e)))?;
 
-    // Step 1: Build scan settings XML
+    // Step 1: Check scanner status and cancel stale jobs if busy
+    cancel_stale_jobs(&client, &base);
+
+    // Step 2: Build scan settings XML
     let xml = build_scan_xml(scanner, options);
     eprintln!("[eSCL] Scan settings:\n{}", xml);
 
-    // Step 2: POST scan job
+    // Step 3: POST scan job (with retry on 503 — scanner busy)
     let scan_url = format!("{}/ScanJobs", base);
-    let resp = client
-        .post(&scan_url)
-        .header("Content-Type", "text/xml")
-        .body(xml)
-        .send()
-        .map_err(|e| ScannerError::SystemError(format!("POST ScanJobs: {}", e)))?;
+    let max_retries = 5;
+    let mut resp = None;
+    let mut cleaned_up = false;
 
-    let status = resp.status();
-    eprintln!("[eSCL] ScanJobs response: {}", status);
+    for attempt in 0..max_retries {
+        let r = client
+            .post(&scan_url)
+            .header("Content-Type", "text/xml")
+            .body(xml.clone())
+            .send()
+            .map_err(|e| ScannerError::SystemError(format!("POST ScanJobs: {}", e)))?;
 
-    if status.as_u16() != 201 {
-        let body = resp.text().unwrap_or_default();
-        return Err(ScannerError::SystemError(format!(
-            "Scanner a refusé le scan (HTTP {}): {}",
-            status, body
-        )));
+        let status = r.status();
+        eprintln!("[eSCL] ScanJobs response: {} (attempt {}/{})", status, attempt + 1, max_retries);
+
+        if status.as_u16() == 503 {
+            // Try cleanup once, then just wait between retries
+            if !cleaned_up {
+                eprintln!("[eSCL] Scanner busy (503), attempting cleanup...");
+                cancel_stale_jobs(&client, &base);
+                cleaned_up = true;
+            } else {
+                eprintln!("[eSCL] Scanner busy (503), waiting 3s before retry...");
+                std::thread::sleep(Duration::from_secs(3));
+            }
+            continue;
+        }
+
+        if status.as_u16() != 201 {
+            let body = r.text().unwrap_or_default();
+            return Err(ScannerError::SystemError(format!(
+                "Scanner a refusé le scan (HTTP {}): {}",
+                status, body
+            )));
+        }
+
+        resp = Some(r);
+        break;
     }
+
+    let resp = resp.ok_or_else(|| {
+        ScannerError::SystemError(
+            "Ce scanner refuse les requêtes de numérisation (503). Son firmware eSCL est peut-être incompatible. Essayez un autre scanner ou redémarrez l'appareil.".into(),
+        )
+    })?;
 
     // Step 3: Get job location from Location header
     let location = resp

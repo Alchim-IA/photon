@@ -101,31 +101,66 @@ unsafe fn write_wia_property_i32(
 #[cfg(windows)]
 fn find_scanner_item(root: &IWiaItem2) -> Result<IWiaItem2> {
     unsafe {
-        let enumerator = root.EnumChildItems(None)?;
-        let mut child_index = 0u32;
-        loop {
+        // First, try to find a child item with WiaItemTypeTransfer (0x8)
+        match root.EnumChildItems(None) {
+            Ok(enumerator) => {
+                let mut child_index = 0u32;
+                loop {
+                    let mut item: Option<IWiaItem2> = None;
+                    let mut fetched: u32 = 0;
+                    let hr = enumerator.Next(1, &mut item, &mut fetched);
+                    if hr.is_err() || fetched == 0 {
+                        log::warn!("[WIA] find_scanner_item: plus d'enfants après {} items inspectés", child_index);
+                        break;
+                    }
+                    if let Some(item) = item.take() {
+                        let item_type = {
+                            let storage: IWiaPropertyStorage = item.cast()?;
+                            read_wia_property_i32(&storage, WIA_IPA_ITEM_FLAGS).unwrap_or(0)
+                        };
+                        log::debug!("[WIA] find_scanner_item: enfant #{} item_type=0x{:08X}", child_index, item_type);
+                        // WiaItemTypeTransfer (0x8) means the item can transfer data
+                        if (item_type & 0x8) != 0 {
+                            log::info!("[WIA] find_scanner_item: trouvé item transférable à l'index {}", child_index);
+                            return Ok(item);
+                        }
+                    }
+                    child_index += 1;
+                }
+            }
+            Err(e) => {
+                log::warn!("[WIA] find_scanner_item: EnumChildItems échoué: {}", e);
+            }
+        }
+
+        // Fallback: some scanners (older Kodak, WIA 1.0 compat) expose the root item
+        // itself as the transfer-capable item — check if root has WiaItemTypeTransfer
+        let root_type = {
+            let storage: IWiaPropertyStorage = root.cast()?;
+            read_wia_property_i32(&storage, WIA_IPA_ITEM_FLAGS).unwrap_or(0)
+        };
+        log::info!("[WIA] find_scanner_item: vérification root item_type=0x{:08X}", root_type);
+
+        if (root_type & 0x8) != 0 {
+            log::info!("[WIA] find_scanner_item: root item est transférable (WIA 1.0 compat)");
+            // Clone the root by re-creating via device ID — root itself implements IWiaItem2
+            return Ok(root.clone());
+        }
+
+        // Last resort: try to use the first child item regardless of flags
+        if let Ok(enumerator) = root.EnumChildItems(None) {
             let mut item: Option<IWiaItem2> = None;
             let mut fetched: u32 = 0;
             let hr = enumerator.Next(1, &mut item, &mut fetched);
-            if hr.is_err() || fetched == 0 {
-                log::warn!("[WIA] find_scanner_item: plus d'enfants après {} items inspectés", child_index);
-                break;
-            }
-            if let Some(item) = item.take() {
-                let item_type = {
-                    let storage: IWiaPropertyStorage = item.cast()?;
-                    read_wia_property_i32(&storage, WIA_IPA_ITEM_FLAGS).unwrap_or(0)
-                };
-                log::debug!("[WIA] find_scanner_item: enfant #{} item_type=0x{:08X}", child_index, item_type);
-                // WiaItemTypeTransfer (0x8) means the item can transfer data
-                if (item_type & 0x8) != 0 {
-                    log::info!("[WIA] find_scanner_item: trouvé item transférable à l'index {}", child_index);
+            if hr.is_ok() && fetched > 0 {
+                if let Some(item) = item.take() {
+                    log::info!("[WIA] find_scanner_item: utilisation du premier enfant en dernier recours");
                     return Ok(item);
                 }
             }
-            child_index += 1;
         }
-        log::error!("[WIA] find_scanner_item: aucun item transférable trouvé parmi {} enfants", child_index);
+
+        log::error!("[WIA] find_scanner_item: aucun item transférable trouvé (ni enfant, ni root)");
         Err(Error::from(E_FAIL))
     }
 }
@@ -136,6 +171,10 @@ impl ScannerBackend for WiaBackend {
         {
             log::info!("[WIA] list_devices: début de l'énumération des scanners");
             unsafe {
+                // COM must be initialized on each thread
+                let _com_init = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+                log::debug!("[WIA] list_devices: COM init sur thread: {:?}", _com_init);
+
                 let dev_mgr: IWiaDevMgr2 = CoCreateInstance(&WiaDevMgr2, None, CLSCTX_ALL)
                     .map_err(|e| {
                         log::error!("[WIA] list_devices: impossible de créer WIA Device Manager: {}", e);
@@ -177,10 +216,15 @@ impl ScannerBackend for WiaBackend {
                         );
 
                         // Check if it's a scanner (type & 0x000F == 1)
-                        if (dev_type & 0x000F) != 1 {
-                            log::debug!("[WIA] list_devices: #{} ignoré (pas un scanner, type=0x{:04X})", device_index, dev_type & 0x000F);
+                        // Some scanners (older Kodak, etc.) report dev_type=0 — include them too
+                        let dev_subtype = dev_type & 0x000F;
+                        if dev_subtype != 1 && dev_subtype != 0 {
+                            log::debug!("[WIA] list_devices: #{} ignoré (pas un scanner, type=0x{:04X})", device_index, dev_subtype);
                             device_index += 1;
                             continue;
+                        }
+                        if dev_subtype == 0 {
+                            log::info!("[WIA] list_devices: #{} type inconnu (0x0000), inclus en tant que scanner potentiel", device_index);
                         }
 
                         let mut caps = ScannerCapabilities::default();
@@ -224,6 +268,12 @@ impl ScannerBackend for WiaBackend {
                             }
                         }
 
+                        // Ensure default resolutions if none were detected
+                        if caps.resolutions.is_empty() {
+                            caps.resolutions = vec![150, 300, 600];
+                            log::info!("[WIA] list_devices: #{} résolutions par défaut appliquées", device_index);
+                        }
+
                         log::info!(
                             "[WIA] list_devices: scanner ajouté: '{}' ({}) résolutions={:?} adf={} duplex={}",
                             name, vendor, caps.resolutions, caps.supports_adf, caps.supports_duplex
@@ -256,6 +306,10 @@ impl ScannerBackend for WiaBackend {
                 options.device_id, options.dpi, options.color_mode, options.duplex, options.paper_format
             );
             unsafe {
+                // COM must be initialized on each thread — this scan runs in spawn_blocking
+                let _com_init = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+                log::debug!("[WIA] scan: COM init sur thread de scan: {:?}", _com_init);
+
                 let dev_mgr: IWiaDevMgr2 = CoCreateInstance(&WiaDevMgr2, None, CLSCTX_ALL)
                     .map_err(|e| {
                         log::error!("[WIA] scan: WIA init échoué: {}", e);

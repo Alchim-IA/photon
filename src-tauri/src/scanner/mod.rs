@@ -80,10 +80,81 @@ pub trait ScannerBackend: Send + Sync {
     fn scan(&self, options: ScanOptions) -> Result<ScanResult, ScannerError>;
 }
 
+/// Combined backend that merges devices from multiple backends.
+/// On Windows: WIA + eSCL (network scanners). Routes scan requests to the right backend.
+struct CombinedBackend {
+    backends: Vec<(&'static str, Box<dyn ScannerBackend + Send + Sync>)>,
+}
+
+impl ScannerBackend for CombinedBackend {
+    fn list_devices(&self) -> Result<Vec<ScannerDevice>, ScannerError> {
+        let mut all_devices = Vec::new();
+        let mut seen_names = std::collections::HashSet::new();
+
+        for (label, backend) in &self.backends {
+            match backend.list_devices() {
+                Ok(devices) => {
+                    log::info!("[Combined] {} a trouvé {} scanner(s)", label, devices.len());
+                    for dev in devices {
+                        // Avoid duplicates by name (WIA and eSCL may find the same scanner)
+                        if seen_names.insert(dev.name.clone()) {
+                            all_devices.push(dev);
+                        } else {
+                            log::debug!("[Combined] doublon ignoré: {}", dev.name);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[Combined] {} erreur: {}", label, e);
+                }
+            }
+        }
+
+        Ok(all_devices)
+    }
+
+    fn scan(&self, options: ScanOptions) -> Result<ScanResult, ScannerError> {
+        // Route to the right backend based on device_id prefix
+        for (label, backend) in &self.backends {
+            // eSCL devices have "escl://" prefix, WIA devices have other formats
+            let is_escl_device = options.device_id.starts_with("escl://");
+            let is_escl_backend = *label == "eSCL";
+
+            if is_escl_device == is_escl_backend {
+                log::info!("[Combined] scan via {} pour device '{}'", label, options.device_id);
+                return backend.scan(options);
+            }
+        }
+
+        // Fallback: try each backend
+        let mut last_err = None;
+        for (label, backend) in &self.backends {
+            log::info!("[Combined] tentative scan via {} (fallback)", label);
+            match backend.scan(options.clone()) {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    log::warn!("[Combined] {} scan échoué: {}", label, e);
+                    last_err = Some(e);
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or(ScannerError::NoDeviceFound))
+    }
+}
+
 /// Returns the platform-appropriate scanner backend.
 pub fn get_backend() -> Box<dyn ScannerBackend + Send + Sync> {
     #[cfg(windows)]
-    return Box::new(wia::WiaBackend::new());
+    {
+        // On Windows: combine WIA (local USB) + eSCL (network) for maximum compatibility
+        Box::new(CombinedBackend {
+            backends: vec![
+                ("WIA", Box::new(wia::WiaBackend::new())),
+                ("eSCL", Box::new(escl::EsclBackend::new())),
+            ],
+        })
+    }
     #[cfg(target_os = "macos")]
     return Box::new(escl::EsclBackend::new());
     #[cfg(target_os = "linux")]
